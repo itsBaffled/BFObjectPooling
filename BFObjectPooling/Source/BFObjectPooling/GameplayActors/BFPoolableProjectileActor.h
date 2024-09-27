@@ -15,16 +15,16 @@ class UProjectileMovementComponent;
 
 
 
-/** All built in poolable actors have 2 main paths pre planned out for them and is typically how I expect most poolable actors to be used.
+/** All built in poolable actors have 3 main paths pre planned out for them and is typically how I expect most poolable actors to be used.
  *
- * - BP side QuickUnpoolProjectileActor : This is the fastest and simplest way for BP to unpool these actors, the pool must be of this type and the actor must be of this type.
+ * - QuickUnpoolProjectileActor: This is the fastest and simplest way for BP to unpool these actors, the pool must be of this type and the actor must be of this type and thats more or less it, just init the pool and call QuickUnpoolProjectileActor.
  *
- * - FireAndForget: This is the simplest way to use a poolable actor, you give it the initial params and it will handle the rest by returning to the pool after the conditional return options are met.
+ * - FireAndForget: This is the simplest way to use a poolable actor from c++ (BP also has access), you just init the pool, get a pooled actor and cast it to this type and then call FireAndForget passing it the
+ * 		activation params and a transform and it will handle the rest by returning after the conditional return options are met.
  *		(This is your ActorCurfew value or any other kind of auto return logic the poolable actor supplies).
  *
- * - Manual Control: You can manually control the poolable actor, you are responsible for acquiring the actors handle, setting its params via SetPoolableActorParams() or any other way you see fit and then activating the actor yourself,
- *		You can then manually tell the handle when to return or pass the object its handle via SetPoolHandle and let the actor handle its own return logic. You must ensure it has a way to manually return when it finishes.
- */
+ * - Manual Control: You can manually control the poolable actor, you are responsible for acquiring the actors handle (like normal but you hang on to it until it's ready to return) and setting its params via SetPoolableActorParams() 
+ * 		or any other way you see fit to setup your object. */
 
 
 /** A generic poolable projectile actor that already implements the IBFPooledObjectInterface and can be used for various situations involving projectiles in the world.

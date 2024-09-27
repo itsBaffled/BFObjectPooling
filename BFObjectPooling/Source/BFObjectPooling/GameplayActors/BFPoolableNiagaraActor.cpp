@@ -76,7 +76,7 @@ void ABFPoolableNiagaraActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	if(ActivationInfo.DelayedActivationTimeSeconds > 0)
 	{
 		FTimerDelegate TimerDel;
-		TimerDel.BindWeakLambda(this, [this, ActorTransform]()
+		TimerDel.BindWeakLambda(this, [this]()
 		{
 			SetActorHiddenInGame(false);
 			ActivatePoolableActor();

@@ -9,6 +9,10 @@ class UNiagaraSystem;
 class UCurveVector4;
 
 
+
+
+
+
 // Defines a collision shape type.
 UENUM(BlueprintType)
 enum class EBFCollisionShapeType : uint8
@@ -23,7 +27,7 @@ enum class EBFCollisionShapeType : uint8
 
 // 1:1 wrappers so I can get away with no include.
 
-// Defines a poolable sounds fade curve
+// Defines a Poolable Actor Sounds Fade Curve
 UENUM(BlueprintType)
 enum class EBFPoolableAudioSoundCurve : uint8
 {
@@ -33,7 +37,8 @@ enum class EBFPoolableAudioSoundCurve : uint8
 	Sin
 };
 
-// Defines what space a poolable 3DWidget displays in
+
+// Defines what space a poolable 3DWidget is displayed in.
 UENUM(BlueprintType)
 enum class EBFWidgetSpace : uint8
 {
@@ -388,7 +393,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float VolumeMultiplier = 1.0f;
 	
-	/** Can skip ahead where a sound starts */
+	// Can skip ahead where a sound starts
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float StartingTimeOffset = 0.0f;
 	
@@ -399,11 +404,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float DelayedActivationTimeSeconds = -1.0f;
 
-	/** If above 0 when activating the sound you can specify a fade in time */
+	// If above 0 when activating the sound you can specify a fade in time
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float FadeInTime = .1f;
 	
-	/** If above 0 when the curfew elapses and the the sound is still playing will use this value to fade out audio and then return. */
+	// If above 0 when the curfew elapses and the the sound is still playing will use this value to fade out audio and then return.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float FadeOutTime = .1f;
 	
@@ -413,7 +418,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float ActorCurfew = -1.0f;
 
-	/** Sound curve to be applied when using audio fading. */
+	// Sound curve to be applied when using audio fading.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	EBFPoolableAudioSoundCurve FadeInCurve = EBFPoolableAudioSoundCurve::Linear;
 	
