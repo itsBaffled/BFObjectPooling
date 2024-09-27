@@ -22,7 +22,7 @@
 		{
 			"Name": "BFObjectPooling_K2",
 			"Type": "UncookedOnly",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "PreDefault"
 		}
 	],
 	"Plugins": [
