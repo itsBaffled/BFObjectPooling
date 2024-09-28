@@ -26,39 +26,6 @@ ABFPoolableProjectileActor::ABFPoolableProjectileActor(const FObjectInitializer&
 	
 	ProjectileMovementComponent = CreateDefaultSubobject<UProjectileMovementComponent>("ProjectileMovementComponent");
 }
- 
-
-void ABFPoolableProjectileActor::OnObjectPooled_Implementation()
-{
-	SetActorTickEnabled(true);
-	RemoveCurfew();
-	
-	ObjectHandle = nullptr;
-	BPObjectHandle = nullptr;
-
-	ActivationInfo = {};
-	ProjectileMovementComponent->SetComponentTickEnabled(false);
-
-	if(OptionalNiagaraComponent)
-	{
-		OptionalNiagaraComponent->Deactivate();
-		OptionalNiagaraComponent->SetComponentTickEnabled(false);
-	}
-
-	if(OptionalStaticMeshComponent)
-	{
-		OptionalStaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		OptionalStaticMeshComponent->SetSimulatePhysics(false);
-	}
-	
-	if(UShapeComponent* CollisionComponent = Cast<UShapeComponent>(RootComponent))
-	{
-		// We may be changing collision components between re use so just clear all bindings and not worry about it.
-		CollisionComponent->OnComponentHit.RemoveDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorHit);
-		CollisionComponent->OnComponentBeginOverlap.RemoveDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorOverlap);
-		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
-}
 
 
 void ABFPoolableProjectileActor::PostInitializeComponents()
@@ -73,7 +40,7 @@ void ABFPoolableProjectileActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandleBP(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -91,7 +58,7 @@ void ABFPoolableProjectileActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoola
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
 
 	SetPoolHandle(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -103,34 +70,9 @@ void ABFPoolableProjectileActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoola
 }
 
 
-
-void ABFPoolableProjectileActor::FellOutOfWorld(const UDamageType& DmgType)
+void ABFPoolableProjectileActor::SetPoolableActorParams( const FBFPoolableProjectileActorDescription& ActivationParams)
 {
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
-	
-	RemoveCurfew();
-	ReturnToPool();
-}
-
-
-bool ABFPoolableProjectileActor::ReturnToPool()
-{
-	if(bIsUsingBPHandle)
-	{
-		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
-			return BPObjectHandle->ReturnToPool();
-	}
-	else
-	{
-		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
-			return ObjectHandle->ReturnToPool();
-	}
-	
-	return false;
+	ActivationInfo = ActivationParams;
 }
 
 
@@ -171,6 +113,55 @@ void ABFPoolableProjectileActor::SetupObjectState()
 }
 
 
+// If successful this leads to the interface call OnObjectPooled.
+bool ABFPoolableProjectileActor::ReturnToPool()
+{
+	if(bIsUsingBPHandle)
+	{
+		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
+			return BPObjectHandle->ReturnToPool();
+	}
+	else
+	{
+		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
+			return ObjectHandle->ReturnToPool();
+	}
+	
+	return false;
+}
+
+
+void ABFPoolableProjectileActor::OnObjectPooled_Implementation()
+{
+	RemoveCurfew();
+	
+	ObjectHandle = nullptr;
+	BPObjectHandle = nullptr;
+
+	ActivationInfo = {};
+	ProjectileMovementComponent->SetComponentTickEnabled(false);
+
+	if(OptionalNiagaraComponent)
+	{
+		OptionalNiagaraComponent->Deactivate();
+		OptionalNiagaraComponent->SetComponentTickEnabled(false);
+	}
+
+	if(OptionalStaticMeshComponent)
+	{
+		OptionalStaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		OptionalStaticMeshComponent->SetSimulatePhysics(false);
+	}
+	
+	if(UShapeComponent* CollisionComponent = Cast<UShapeComponent>(RootComponent))
+	{
+		// We may be changing collision components between re use so just clear all bindings and not worry about it.
+		CollisionComponent->OnComponentHit.RemoveDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorHit);
+		CollisionComponent->OnComponentBeginOverlap.RemoveDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorOverlap);
+		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
 
 void ABFPoolableProjectileActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
@@ -193,11 +184,15 @@ void ABFPoolableProjectileActor::SetPoolHandle(
 }
 
 
-void ABFPoolableProjectileActor::SetPoolableActorParams( const FBFPoolableProjectileActorDescription& ActivationParams)
+void ABFPoolableProjectileActor::FellOutOfWorld(const UDamageType& DmgType)
 {
-	ActivationInfo = ActivationParams;
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	ReturnToPool();
 }
-
 
 
 bool ABFPoolableProjectileActor::HandleComponentCreation()
@@ -367,8 +362,6 @@ bool ABFPoolableProjectileActor::HandleComponentCreation()
 	return bUpdatedRoot;
 }
 
-
-
 void ABFPoolableProjectileActor::SetCurfew(float SecondsUntilReturn)
 {
 	bfEnsure(SecondsUntilReturn > 0);
@@ -392,7 +385,6 @@ void ABFPoolableProjectileActor::OnCurfewExpired()
 }
 
 
-
 void ABFPoolableProjectileActor::OnProjectileStopped_Implementation(const FHitResult& HitResult)
 {
 	ActivationInfo.OnProjectileStoppedDelegate.ExecuteIfBound(HitResult);
@@ -414,6 +406,10 @@ void ABFPoolableProjectileActor::OnProjectileActorHit_Implementation(UPrimitiveC
 		OptionalStaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 		OptionalStaticMeshComponent->SetCollisionProfileName(ActivationInfo.ProjectileMesh.CollisionProfile.Name);
 		OptionalStaticMeshComponent->SetSimulatePhysics(true);
+
+		// Disable collision for the shape component otherwise we have an invisible shape blocking things.
+		if(auto* Shape = Cast<UShapeComponent>(RootComponent))
+			Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision); 
 	}
 }
 
@@ -430,5 +426,9 @@ void ABFPoolableProjectileActor::OnProjectileActorOverlap_Implementation(UPrimit
 		OptionalStaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 		OptionalStaticMeshComponent->SetCollisionProfileName(ActivationInfo.ProjectileMesh.CollisionProfile.Name);
 		OptionalStaticMeshComponent->SetSimulatePhysics(true);
+
+		// Disable collision for the shape component otherwise we have an invisible shape blocking things.
+		if(auto* Shape = Cast<UShapeComponent>(RootComponent))
+			Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision); 
 	}
 }

@@ -26,21 +26,6 @@ ABFPoolableDecalActor::ABFPoolableDecalActor(const FObjectInitializer& ObjectIni
 	DecalComponent->SetupAttachment(RootComponent);
 }
 
-void ABFPoolableDecalActor::OnObjectPooled_Implementation()
-{
-	RemoveCurfew();
-
-	DecalComponent->FadeInDuration = 0.f;
-	DecalComponent->FadeInStartDelay = 0.f;
-	DecalComponent->FadeDuration = 0.f;
-	DecalComponent->FadeStartDelay = 0.f;
-
-	ObjectHandle = nullptr;
-	BPObjectHandle = nullptr;
-	ActivationInfo = {};
-}
-
-
 
 void ABFPoolableDecalActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableDecalActorDescription& ActivationParams, const FTransform& ActorTransform)
@@ -49,7 +34,7 @@ void ABFPoolableDecalActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandleBP(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -69,7 +54,7 @@ void ABFPoolableDecalActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDe
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandle(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -81,16 +66,68 @@ void ABFPoolableDecalActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDe
 }
 
 
-void ABFPoolableDecalActor::FellOutOfWorld(const UDamageType& DmgType)
+void ABFPoolableDecalActor::SetPoolableActorParams( const FBFPoolableDecalActorDescription& ActivationParams)
 {
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
+	ActivationInfo = ActivationParams;
+}
+
+
+void ABFPoolableDecalActor::ActivatePoolableActor()
+{
+	SetupObjectState();
+}
+
+
+void ABFPoolableDecalActor::SetupObjectState()
+{
+	bfValid(ActivationInfo.DecalMaterial); // you must set the decal material
+	DecalComponent->SetMaterial(0, ActivationInfo.DecalMaterial);
+	DecalComponent->DecalSize = ActivationInfo.DecalExtent;
+	DecalComponent->SortOrder = ActivationInfo.SortOrder;
 	
+	if(ActivationInfo.FadeInTime > 0)
+	{
+		float FadeDurationScale = BF::OP::DecalFadeDurationCVar->GetValueOnGameThread();
+		DecalComponent->FadeInStartDelay = 0.f;
+		DecalComponent->FadeInDuration = FadeDurationScale > KINDA_SMALL_NUMBER ? ActivationInfo.FadeInTime / FadeDurationScale : KINDA_SMALL_NUMBER;
+		
+		if(DecalComponent->SceneProxy)
+			GetWorld()->Scene->UpdateDecalFadeOutTime(DecalComponent);
+		else
+			DecalComponent->MarkRenderStateDirty();
+	}
+}
+
+
+bool ABFPoolableDecalActor::ReturnToPool()
+{
+	// If successful this leads to the interface call OnObjectPooled.
+	if(bIsUsingBPHandle)
+	{
+		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
+			return BPObjectHandle->ReturnToPool();
+	}
+	else
+	{
+		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
+			return ObjectHandle->ReturnToPool();
+	}
+	return false;
+}
+
+
+void ABFPoolableDecalActor::OnObjectPooled_Implementation()
+{
 	RemoveCurfew();
-	ReturnToPool();
+
+	DecalComponent->FadeInDuration = 0.f;
+	DecalComponent->FadeInStartDelay = 0.f;
+	DecalComponent->FadeDuration = 0.f;
+	DecalComponent->FadeStartDelay = 0.f;
+
+	ObjectHandle = nullptr;
+	BPObjectHandle = nullptr;
+	ActivationInfo = {};
 }
 
 
@@ -114,17 +151,15 @@ void ABFPoolableDecalActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoolableDe
 }
 
 
-void ABFPoolableDecalActor::SetPoolableActorParams( const FBFPoolableDecalActorDescription& ActivationParams)
+void ABFPoolableDecalActor::FellOutOfWorld(const UDamageType& DmgType)
 {
-	ActivationInfo = ActivationParams;
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	ReturnToPool();
 }
-
-
-void ABFPoolableDecalActor::ActivatePoolableActor()
-{
-	SetupObjectState();
-}
-
 
 
 void ABFPoolableDecalActor::SetCurfew(float SecondsUntilReturn)
@@ -167,38 +202,3 @@ void ABFPoolableDecalActor::OnCurfewExpired()
 }
 
 
-void ABFPoolableDecalActor::SetupObjectState()
-{
-	bfValid(ActivationInfo.DecalMaterial); // you must set the decal material
-	DecalComponent->SetMaterial(0, ActivationInfo.DecalMaterial);
-	DecalComponent->DecalSize = ActivationInfo.DecalExtent;
-	DecalComponent->SortOrder = ActivationInfo.SortOrder;
-	
-	if(ActivationInfo.FadeInTime > 0)
-	{
-		float FadeDurationScale = BF::OP::DecalFadeDurationCVar->GetValueOnGameThread();
-		DecalComponent->FadeInStartDelay = 0.f;
-		DecalComponent->FadeInDuration = FadeDurationScale > KINDA_SMALL_NUMBER ? ActivationInfo.FadeInTime / FadeDurationScale : KINDA_SMALL_NUMBER;
-		
-		if(DecalComponent->SceneProxy)
-			GetWorld()->Scene->UpdateDecalFadeOutTime(DecalComponent);
-		else
-			DecalComponent->MarkRenderStateDirty();
-	}
-}
-
-
-bool ABFPoolableDecalActor::ReturnToPool()
-{
-	if(bIsUsingBPHandle)
-	{
-		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
-			return BPObjectHandle->ReturnToPool();
-	}
-	else
-	{
-		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
-			return ObjectHandle->ReturnToPool();
-	}
-	return false;
-}

@@ -18,21 +18,6 @@ ABFPoolable3DWidgetActor::ABFPoolable3DWidgetActor(const FObjectInitializer& Obj
 }
 
 
-void ABFPoolable3DWidgetActor::OnObjectPooled_Implementation()
-{
-	RemoveCurfew();
-	
-	ObjectHandle = nullptr;
-	BPObjectHandle = nullptr;
-
-	WidgetComponent->SetTickMode(ETickMode::Disabled);
-	WidgetComponent->SetWidgetSpace(EWidgetSpace::World);
-	WidgetComponent->SetVisibility(false);
-	WidgetComponent->UpdateWidget();
-	ActivationInfo = {};
-}
-
-
 void ABFPoolable3DWidgetActor::Tick(float Dt)
 {
 	Super::Tick(Dt);
@@ -57,18 +42,6 @@ void ABFPoolable3DWidgetActor::Tick(float Dt)
 }
 
 
-void ABFPoolable3DWidgetActor::FellOutOfWorld(const UDamageType& DmgType)
-{
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
-	
-	RemoveCurfew();
-	ReturnToPool();
-}
-
 
 void ABFPoolable3DWidgetActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolable3DWidgetActorDescription& ActivationParams, const FTransform& ActorTransform)
@@ -77,7 +50,7 @@ void ABFPoolable3DWidgetActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandleBP(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -97,7 +70,7 @@ void ABFPoolable3DWidgetActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolabl
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandle(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -107,26 +80,6 @@ void ABFPoolable3DWidgetActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolabl
 	
 	SetActorTransform(ActorTransform);
 	ActivatePoolableActor();
-}
-
-
-void ABFPoolable3DWidgetActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
-{
-	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
-	bIsUsingBPHandle = true;
-	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
-}
-
-
-void ABFPoolable3DWidgetActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoolable3DWidgetActor, ESPMode::NotThreadSafe>& Handle)
-{
-	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
-	bIsUsingBPHandle = false;
-	ObjectHandle = Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
 }
 
 
@@ -142,30 +95,6 @@ void ABFPoolable3DWidgetActor::ActivatePoolableActor()
 	AbsoluteStartLocation = GetActorLocation();
 	WidgetComponent->SetWorldLocation(AbsoluteStartLocation); // In case using curve to drive position, ensure we snap back.
 	bfValid(WidgetComponent->GetWidget());
-}
-
-
-
-void ABFPoolable3DWidgetActor::SetCurfew(float SecondsUntilReturn)
-{
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolable3DWidgetActor::OnCurfewExpired, SecondsUntilReturn, false);
-}
-
-
-void ABFPoolable3DWidgetActor::RemoveCurfew()
-{
-	if(GetWorld()->GetTimerManager().IsTimerActive(CurfewTimerHandle))
-		GetWorld()->GetTimerManager().ClearTimer(CurfewTimerHandle);
-	
-	CurfewTimerHandle.Invalidate();
-}
-
-
-void ABFPoolable3DWidgetActor::OnCurfewExpired()
-{
-	ReturnToPool();
 }
 
 
@@ -192,9 +121,9 @@ void ABFPoolable3DWidgetActor::SetupObjectState()
 }
 
 
-
 bool ABFPoolable3DWidgetActor::ReturnToPool()
 {
+	// If successful this leads to the interface call OnObjectPooled.
 	if(bIsUsingBPHandle)
 	{
 		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
@@ -207,3 +136,74 @@ bool ABFPoolable3DWidgetActor::ReturnToPool()
 	}
 	return false;
 }
+
+
+void ABFPoolable3DWidgetActor::OnObjectPooled_Implementation()
+{
+	RemoveCurfew();
+	
+	ObjectHandle = nullptr;
+	BPObjectHandle = nullptr;
+
+	WidgetComponent->SetTickMode(ETickMode::Disabled);
+	WidgetComponent->SetWidgetSpace(EWidgetSpace::World);
+	WidgetComponent->SetVisibility(false);
+	WidgetComponent->UpdateWidget();
+	ActivationInfo = {};
+}
+
+
+void ABFPoolable3DWidgetActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
+{
+	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
+	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	bIsUsingBPHandle = true;
+	BPObjectHandle = Handle.Handle;
+	Handle.Reset(); // Clear the handle so it can't be used again.
+}
+
+
+void ABFPoolable3DWidgetActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoolable3DWidgetActor, ESPMode::NotThreadSafe>& Handle)
+{
+	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
+	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	bIsUsingBPHandle = false;
+	ObjectHandle = Handle;
+	Handle.Reset(); // Clear the handle so it can't be used again.
+}
+
+
+void ABFPoolable3DWidgetActor::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	ReturnToPool();
+}
+
+
+void ABFPoolable3DWidgetActor::SetCurfew(float SecondsUntilReturn)
+{
+	bfEnsure(SecondsUntilReturn > 0);
+	RemoveCurfew();
+	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolable3DWidgetActor::OnCurfewExpired, SecondsUntilReturn, false);
+}
+
+
+void ABFPoolable3DWidgetActor::RemoveCurfew()
+{
+	if(GetWorld()->GetTimerManager().IsTimerActive(CurfewTimerHandle))
+		GetWorld()->GetTimerManager().ClearTimer(CurfewTimerHandle);
+	
+	CurfewTimerHandle.Invalidate();
+}
+
+
+void ABFPoolable3DWidgetActor::OnCurfewExpired()
+{
+	ReturnToPool();
+}
+
+

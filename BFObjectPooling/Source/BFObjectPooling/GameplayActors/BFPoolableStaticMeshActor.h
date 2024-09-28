@@ -21,6 +21,7 @@
  * - Manual Control: You can manually control the poolable actor, you are responsible for acquiring the actors handle (like normal but you hang on to it until it's ready to return) and setting its params via SetPoolableActorParams() 
  * 		or any other way you see fit to setup your object. */
 
+
 /** A generic poolable static mesh actor that already implements the IBFPooledObjectInterface and can be used for various situations involving mesh spawning/pooling at runtime, such as gibs or bullet shells. */
 UCLASS(meta=(DisplayName="BF Poolable Static Mesh Actor"))
 class BFOBJECTPOOLING_API ABFPoolableStaticMeshActor : public AActor, public IBFPooledObjectInterface

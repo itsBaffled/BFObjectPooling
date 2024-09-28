@@ -20,39 +20,13 @@ ABFPoolableNiagaraActor::ABFPoolableNiagaraActor(const FObjectInitializer& Objec
 	NiagaraComponent->SetupAttachment(RootComponent);
 }
 
+
 void ABFPoolableNiagaraActor::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
 	GetNiagaraComponent()->OnSystemFinished.AddUniqueDynamic(this, &ABFPoolableNiagaraActor::OnNiagaraSystemFinished);
 }
 
-
-void ABFPoolableNiagaraActor::BeginDestroy()
-{
-	Super::BeginDestroy();
-
-	if(GetNiagaraComponent())
-		GetNiagaraComponent()->OnSystemFinished.RemoveAll(this);
-}
-
-
-void ABFPoolableNiagaraActor::OnObjectPooled_Implementation()
-{
-	// Reset everything.
-	RemoveCurfew();
-	if(DelayedActivationTimerHandle.IsValid())
-		GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
-
-	ObjectHandle = nullptr;
-	BPObjectHandle = nullptr;
-	bHasFinished = false; 
-	OnNiagaraSystemFinishedDelegate.Clear();
-	ActivationInfo = {};
-
-	
-	if(GetNiagaraComponent())
-		GetNiagaraComponent()->DeactivateImmediate();
-}
 
 void ABFPoolableNiagaraActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 		const FBFPoolableNiagaraActorDescription& ActivationParams, const FTransform& ActorTransform)
@@ -97,7 +71,7 @@ void ABFPoolableNiagaraActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolable
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
 	bfValid(ActivationParams.NiagaraSystem); // you must set the system
 
-	
+	// Even if delayed we set the transform and stay waiting hidden until the delayed activation time.
 	SetPoolHandle(Handle);
 	SetActorTransform(ActorTransform);
 	SetPoolableActorParams(ActivationParams);
@@ -125,16 +99,55 @@ void ABFPoolableNiagaraActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolable
 }
 
 
-void ABFPoolableNiagaraActor::FellOutOfWorld(const UDamageType& DmgType)
+void ABFPoolableNiagaraActor::SetPoolableActorParams(const FBFPoolableNiagaraActorDescription& ActivationParams)
 {
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
-	
+	bfValid(ActivationParams.NiagaraSystem); // You must set the system for a niagara actor otherwise what is the point.
+	ActivationInfo = ActivationParams;
+}
+
+
+void ABFPoolableNiagaraActor::ActivatePoolableActor()
+{
+	bfValid(ActivationInfo.NiagaraSystem); // You must set the system
+	GetNiagaraComponent()->SetAsset(ActivationInfo.NiagaraSystem);
+	ResetSystem();
+}
+
+
+// If successful this leads to the interface call OnObjectPooled.
+bool ABFPoolableNiagaraActor::ReturnToPool()
+{
+	bHasFinished = true;
+	OnNiagaraSystemFinishedDelegate.Broadcast();
+
+	if(bIsUsingBPHandle)
+	{
+		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
+			return BPObjectHandle->ReturnToPool();
+	}
+	else
+	{
+		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
+			return ObjectHandle->ReturnToPool();
+	}
+	return false;
+}
+
+
+void ABFPoolableNiagaraActor::OnObjectPooled_Implementation()
+{
+	// Reset everything.
+	GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
 	RemoveCurfew();
-	ReturnToPool();
+
+	ObjectHandle = nullptr;
+	BPObjectHandle = nullptr;
+	bHasFinished = false; 
+	OnNiagaraSystemFinishedDelegate.Clear();
+	ActivationInfo = {};
+	
+	if(GetNiagaraComponent())
+		GetNiagaraComponent()->DeactivateImmediate();
 }
 
 
@@ -158,11 +171,16 @@ void ABFPoolableNiagaraActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 }
 
 
-void ABFPoolableNiagaraActor::ActivatePoolableActor()
+void ABFPoolableNiagaraActor::FellOutOfWorld(const UDamageType& DmgType)
 {
-	bfValid(ActivationInfo.NiagaraSystem); // You must set the system
-	ResetSystem();
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	ReturnToPool();
 }
+
 
 void ABFPoolableNiagaraActor::OnNiagaraSystemFinished(UNiagaraComponent* FinishedComponent)
 {
@@ -173,7 +191,6 @@ void ABFPoolableNiagaraActor::OnNiagaraSystemFinished(UNiagaraComponent* Finishe
 
 void ABFPoolableNiagaraActor::OnCurfewExpired()
 {
-	CurfewTimerHandle.Invalidate();
 	ReturnToPool();
 }
 
@@ -182,25 +199,6 @@ void ABFPoolableNiagaraActor::ResetSystem()
 {
 	bHasFinished = false;
 	GetNiagaraComponent()->ResetSystem();
-}
-
-
-bool ABFPoolableNiagaraActor::ReturnToPool()
-{
-	bHasFinished = true;
-	OnNiagaraSystemFinishedDelegate.Broadcast();
-
-	if(bIsUsingBPHandle)
-	{
-		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
-			return BPObjectHandle->ReturnToPool();
-	}
-	else
-	{
-		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
-			return ObjectHandle->ReturnToPool();
-	}
-	return false;
 }
 
 
@@ -229,27 +227,19 @@ void ABFPoolableNiagaraActor::RemoveCurfew()
 }
 
 
-void ABFPoolableNiagaraActor::SetPoolableActorParams(const FBFPoolableNiagaraActorDescription& ActivationParams)
-{
-	bfValid(ActivationParams.NiagaraSystem); // You must set the system for a niagara actor otherwise what is the point.
-	ActivationInfo = ActivationParams;
-	GetNiagaraComponent()->SetAsset(ActivationParams.NiagaraSystem);
-}
-
-
 UNiagaraSystem* ABFPoolableNiagaraActor::GetNiagaraSystem() const
 {
 	return GetNiagaraComponent()->GetAsset();
 }
 
 
+void ABFPoolableNiagaraActor::BeginDestroy()
+{
+	Super::BeginDestroy();
 
-
-
-
-
-
-
+	if(GetNiagaraComponent())
+		GetNiagaraComponent()->OnSystemFinished.RemoveAll(this);
+}
 
 
 

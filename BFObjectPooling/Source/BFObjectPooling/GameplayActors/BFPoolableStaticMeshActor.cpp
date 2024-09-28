@@ -22,26 +22,13 @@ ABFPoolableStaticMeshActor::ABFPoolableStaticMeshActor(const FObjectInitializer&
 }
 
 
-void ABFPoolableStaticMeshActor::OnObjectPooled_Implementation()
-{
-	RemoveCurfew(); 
-
-	StaticMeshComponent->SetSimulatePhysics(false);
-	StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	
-	ObjectHandle = nullptr;
-	BPObjectHandle = nullptr;
-
-	ActivationInfo = {};
-}
-
 void ABFPoolableStaticMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableStaticMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandleBP(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -60,7 +47,7 @@ void ABFPoolableStaticMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoola
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
 	
 	SetPoolHandle(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -73,19 +60,17 @@ void ABFPoolableStaticMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoola
 }
 
 
-void ABFPoolableStaticMeshActor::FellOutOfWorld(const UDamageType& DmgType)
+void ABFPoolableStaticMeshActor::SetPoolableActorParams( const FBFPoolableStaticMeshActorDescription& ActivationParams)
 {
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
-	
-	RemoveCurfew();
-	ReturnToPool();
+	ActivationInfo = ActivationParams;
 }
 
 
+void ABFPoolableStaticMeshActor::ActivatePoolableActor(bool bSimulatePhysics)
+{
+	SetupObjectState(bSimulatePhysics);
+	bWasSimulating = bSimulatePhysics;
+}
 
 void ABFPoolableStaticMeshActor::SetupObjectState(bool bSimulatePhysics)
 {
@@ -110,6 +95,7 @@ void ABFPoolableStaticMeshActor::SetupObjectState(bool bSimulatePhysics)
 }
 
 
+// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableStaticMeshActor::ReturnToPool()
 {
 	if(bIsUsingBPHandle)
@@ -124,6 +110,20 @@ bool ABFPoolableStaticMeshActor::ReturnToPool()
 	}
 	
 	return false;
+}
+
+
+void ABFPoolableStaticMeshActor::OnObjectPooled_Implementation()
+{
+	RemoveCurfew(); 
+
+	StaticMeshComponent->SetSimulatePhysics(false);
+	StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
+	ObjectHandle = nullptr;
+	BPObjectHandle = nullptr;
+
+	ActivationInfo = {};
 }
 
 
@@ -147,16 +147,14 @@ void ABFPoolableStaticMeshActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoola
 }
 
 
-void ABFPoolableStaticMeshActor::SetPoolableActorParams( const FBFPoolableStaticMeshActorDescription& ActivationParams)
+void ABFPoolableStaticMeshActor::FellOutOfWorld(const UDamageType& DmgType)
 {
-	ActivationInfo = ActivationParams;
-}
-
-
-void ABFPoolableStaticMeshActor::ActivatePoolableActor(bool bSimulatePhysics)
-{
-	SetupObjectState(bSimulatePhysics);
-	bWasSimulating = bSimulatePhysics;
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	ReturnToPool();
 }
 
 

@@ -17,35 +17,11 @@ ABFPoolableSoundActor::ABFPoolableSoundActor(const FObjectInitializer& ObjectIni
 	AudioComponent->SetupAttachment( RootComponent);
 } 
 
+
 void ABFPoolableSoundActor::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
 	AudioComponent->OnAudioFinished.AddDynamic(this, &ABFPoolableSoundActor::OnSoundFinished);
-}
-
-
-void ABFPoolableSoundActor::BeginDestroy()
-{
-	Super::BeginDestroy();
-	AudioComponent->OnAudioFinished.RemoveAll(this);
-}
-
-
-void ABFPoolableSoundActor::OnObjectPooled_Implementation()
-{
-	// Reset everything.
-	RemoveCurfew();
-
-	ObjectHandle.Reset();
-	BPObjectHandle.Reset();
-	bHasSoundFinished = false;
-	bWaitForSoundFinishBeforeCurfew = false;
-
-	StartTime = 0;
-	ActivationInfo = {};
-
-	if(AudioComponent)
-		AudioComponent->Stop();
 }
 
 
@@ -111,20 +87,10 @@ void ABFPoolableSoundActor::FireAndForget(
 }
 
 
-void ABFPoolableSoundActor::FellOutOfWorld(const UDamageType& DmgType)
+void ABFPoolableSoundActor::SetPoolableActorParams(const FBFPoolableSoundActorDescription& ActivationParams)
 {
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
-
-	// Very unlikely a sound would ever simulate and fall out of the world but I want to ensure we cant leak.
-	GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
-	RemoveCurfew();
-	ReturnToPool();
+	ActivationInfo = ActivationParams;
 }
-
 
 
 void ABFPoolableSoundActor::ActivatePoolableActor()
@@ -139,6 +105,23 @@ void ABFPoolableSoundActor::ActivatePoolableActor()
 		AudioComponent->Play(ActivationInfo.StartingTimeOffset); // SetupObjectState will trigger start via FadeIn if we are using that so don't play here.
 }
 
+
+void ABFPoolableSoundActor::SetupObjectState()
+{
+	bfEnsure(ActivationInfo.Sound); // You must set the sound manually or if you intend to use this method you must set the sound via SetPoolableActorParams.
+	AudioComponent->SetSound( ActivationInfo.Sound );
+	AudioComponent->SetVolumeMultiplier(ActivationInfo.VolumeMultiplier);
+	AudioComponent->SetPitchMultiplier(ActivationInfo.PitchMultiplier);
+	AudioComponent->AdjustAttenuation(ActivationInfo.AttenuationSettings);
+	AudioComponent->bReverb = ActivationInfo.bReverb;
+	AudioComponent->SetUISound(ActivationInfo.bUISound);
+
+	if(ActivationInfo.FadeInTime > 0)
+		AudioComponent->FadeIn(ActivationInfo.FadeInTime, ActivationInfo.VolumeMultiplier, ActivationInfo.StartingTimeOffset, (EAudioFaderCurve)ActivationInfo.FadeInCurve);
+}
+
+
+// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableSoundActor::ReturnToPool()
 {
 	bHasSoundFinished = true;
@@ -156,6 +139,24 @@ bool ABFPoolableSoundActor::ReturnToPool()
 }
 
 
+void ABFPoolableSoundActor::OnObjectPooled_Implementation()
+{
+	// Reset everything.
+	GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
+	RemoveCurfew();
+
+	ObjectHandle.Reset();
+	BPObjectHandle.Reset();
+	bHasSoundFinished = false;
+	bWaitForSoundFinishBeforeCurfew = false;
+
+	StartTime = 0;
+	ActivationInfo = {};
+
+	if(AudioComponent)
+		AudioComponent->Stop();
+}
+
 void ABFPoolableSoundActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
@@ -164,6 +165,7 @@ void ABFPoolableSoundActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 	BPObjectHandle = Handle.Handle;
 	Handle.Reset(); // Clear the handle so it can't be used again.
 }
+
 
 void ABFPoolableSoundActor::SetPoolHandle( TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle)
 {
@@ -175,17 +177,26 @@ void ABFPoolableSoundActor::SetPoolHandle( TBFPooledObjectHandlePtr<ABFPoolableS
 }
 
 
-void ABFPoolableSoundActor::SetPoolableActorParams(const FBFPoolableSoundActorDescription& ActivationParams)
+void ABFPoolableSoundActor::FellOutOfWorld(const UDamageType& DmgType)
 {
-	ActivationInfo = ActivationParams;
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	// Very unlikely a sound would ever simulate and fall out of the world but I want to ensure we cant leak.
+	ReturnToPool();
 }
 
 
 void ABFPoolableSoundActor::SetCurfew(float SecondsUntilReturn, bool bShouldWaitForSoundFinishBeforeCurfew)
 {
 	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
+
+	// Update flag internally so OnCurfewExpired knows to wait for sound finish.
 	bWaitForSoundFinishBeforeCurfew = bShouldWaitForSoundFinishBeforeCurfew;
+	
+	RemoveCurfew();
 	GetWorld()->GetTimerManager().SetTimer( CurfewTimerHandle, this, &ABFPoolableSoundActor::OnCurfewExpired, SecondsUntilReturn, false );
 }
 
@@ -211,16 +222,19 @@ void ABFPoolableSoundActor::OnSoundFinished()
 		ReturnToPool();
 }
 
+
 USoundBase* ABFPoolableSoundActor::GetSound() const
 {
 	return ActivationInfo.Sound;
 }
+
 
 void ABFPoolableSoundActor::RestartSound()
 {
 	bHasSoundFinished = false;
 	AudioComponent->Activate(true);
 }
+
 
 bool ABFPoolableSoundActor::IsSoundLooping() const
 {
@@ -230,18 +244,17 @@ bool ABFPoolableSoundActor::IsSoundLooping() const
 
 void ABFPoolableSoundActor::CancelDelayedActivationAndReturnToPool()
 {
-	if(IsActivationCurrentlyDelayed())
-		GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
-
-	RemoveCurfew();
+	// OnObjectPooled handles removing timers.
 	ReturnToPool();
 }
+
 
 void ABFPoolableSoundActor::CancelDelayedActivation()
 {
 	if(IsActivationCurrentlyDelayed())
 		GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
 }
+
 
 void ABFPoolableSoundActor::OnCurfewExpired()
 {
@@ -269,18 +282,10 @@ void ABFPoolableSoundActor::OnCurfewExpired()
 }
 
 
-void ABFPoolableSoundActor::SetupObjectState()
+void ABFPoolableSoundActor::BeginDestroy()
 {
-	bfEnsure(ActivationInfo.Sound); // You must set the sound manually or if you intend to use this method you must set the sound via SetPoolableActorParams.
-	AudioComponent->SetSound( ActivationInfo.Sound );
-	AudioComponent->SetVolumeMultiplier(ActivationInfo.VolumeMultiplier);
-	AudioComponent->SetPitchMultiplier(ActivationInfo.PitchMultiplier);
-	AudioComponent->AdjustAttenuation(ActivationInfo.AttenuationSettings);
-	AudioComponent->bReverb = ActivationInfo.bReverb;
-	AudioComponent->SetUISound(ActivationInfo.bUISound);
-
-	if(ActivationInfo.FadeInTime > 0)
-		AudioComponent->FadeIn(ActivationInfo.FadeInTime, ActivationInfo.VolumeMultiplier, ActivationInfo.StartingTimeOffset, (EAudioFaderCurve)ActivationInfo.FadeInCurve);
+	Super::BeginDestroy();
+	AudioComponent->OnAudioFinished.RemoveAll(this);
 }
 
 

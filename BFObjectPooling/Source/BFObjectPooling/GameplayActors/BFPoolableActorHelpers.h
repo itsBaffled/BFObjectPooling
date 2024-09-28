@@ -358,9 +358,9 @@ public:
 	float DelayedActivationTimeSeconds = -1.0f; 
 
 	/** Values above 0 drive how long until the pooled actor will attempt to auto return to the pool,
-	* requires you to have given the handle to the pooled actor either via SetPoolHandle or FireAndForget.*/
+	* requires you to have given the handle to the pooled actor either via SetPoolHandle or FireAndForget. Should opt for bAutoReturnOnSystemFinish when possible.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	float ActorCurfew = 2.0f;
+	float ActorCurfew = -1.0f;
 
 	// Requires the handle to have been given to us which is the expected behavior. If disabled you need to make sure you have some way of returning the actor to the pool still.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -478,6 +478,12 @@ public:
 	* Should be overridden at the actor level if you do not want this behaviour by implementing something similar yourself. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float PhysicsBodySleepDelay = 2.0f;
+
+	/** When playing animations or simulating physics we need to enable ticking otherwise it just won't work, you can however
+	 * optionally set a tick interval for the mesh component here, anything above 0 will be used otherwise we stick to default tick interval of every frame.
+	 * Only really want to lower the tick interval if the mesh is far away or you deem it acceptable to save on performance. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	float MeshTickInterval = -1.f;
 	
 	// If true the mesh will simulate physics and no animations will be played.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)

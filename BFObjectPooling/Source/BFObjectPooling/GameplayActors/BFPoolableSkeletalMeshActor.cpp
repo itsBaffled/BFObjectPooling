@@ -9,8 +9,8 @@
 ABFPoolableSkeletalMeshActor::ABFPoolableSkeletalMeshActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer) 
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = true;
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
 	RootComponent->SetMobility(EComponentMobility::Movable);
@@ -19,26 +19,6 @@ ABFPoolableSkeletalMeshActor::ABFPoolableSkeletalMeshActor(const FObjectInitiali
 	SkeletalMeshComponent->SetupAttachment(RootComponent);
 }
 
-
-void ABFPoolableSkeletalMeshActor::OnObjectPooled_Implementation()
-{
-	RemoveCurfew();
-	RemovePhysicsSleepDelay();
-
-	if(SkeletalMeshComponent->IsSimulatingPhysics())
-	{
-		// I noticed due to disabling SKM tick it causes the bones
-		// to resume from where they were last simulated if we don't refresh them.
-		SkeletalMeshComponent->SetSimulatePhysics(false);
-		SkeletalMeshComponent->RefreshBoneTransforms();
-	}
-	
-	SkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	SkeletalMeshComponent->SetComponentTickEnabled(false);
-	ObjectHandle = nullptr;
-	BPObjectHandle = nullptr;
-	ActivationInfo = {};
-}
 
 void ABFPoolableSkeletalMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
@@ -51,7 +31,7 @@ void ABFPoolableSkeletalMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Hand
 		ActivationParams.ActorCurfew > ActivationParams.PhysicsBodySleepDelay);
 
 	SetPoolHandleBP(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -62,8 +42,8 @@ void ABFPoolableSkeletalMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Hand
 	
 	// Enable ticking only when needed
 	bool bNeedsTick = ActivationInfo.bSimulatePhysics || ActivationInfo.AnimationInstance || ActivationInfo.AnimSequence;
-	SetActorTickEnabled(bNeedsTick);
-	SkeletalMeshComponent->SetComponentTickEnabled(bNeedsTick);	
+	SkeletalMeshComponent->SetComponentTickEnabled(bNeedsTick);
+	SkeletalMeshComponent->SetComponentTickInterval(ActivationParams.MeshTickInterval);
 
 	SetActorTransform(ActorTransform, false, nullptr, ETeleportType::ResetPhysics);
 	ActivatePoolableActor(ActivationInfo.bSimulatePhysics);
@@ -80,7 +60,7 @@ void ABFPoolableSkeletalMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoo
 	bfEnsure(ActivationParams.PhysicsBodySleepDelay < 0.f || ActivationParams.ActorCurfew < 0.f || ActivationParams.ActorCurfew > ActivationParams.PhysicsBodySleepDelay);
 	
 	SetPoolHandle(Handle);
-	ActivationInfo = ActivationParams;
+	SetPoolableActorParams(ActivationParams);
 
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -91,25 +71,36 @@ void ABFPoolableSkeletalMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoo
 	
 	// Enable ticking only when needed
 	bool bNeedsTick = ActivationInfo.bSimulatePhysics || ActivationInfo.AnimationInstance || ActivationInfo.AnimSequence;
-	SetActorTickEnabled(bNeedsTick);
 	SkeletalMeshComponent->SetComponentTickEnabled(bNeedsTick);	
+	SkeletalMeshComponent->SetComponentTickInterval(ActivationParams.MeshTickInterval);
 
 	SetActorTransform(ActorTransform, false, nullptr, ETeleportType::ResetPhysics);
 	ActivatePoolableActor(ActivationInfo.bSimulatePhysics);
 }
 
 
-void ABFPoolableSkeletalMeshActor::FellOutOfWorld(const UDamageType& DmgType)
+
+void ABFPoolableSkeletalMeshActor::SetPoolableActorParams( const FBFPoolableSkeletalMeshActorDescription& ActivationParams)
 {
-	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
-#if !UE_BUILD_SHIPPING
-	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
-		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
-#endif
-	
-	RemovePhysicsSleepDelay();
-	RemoveCurfew();
-	ReturnToPool();
+	ActivationInfo = ActivationParams; 
+}
+
+void ABFPoolableSkeletalMeshActor::ActivatePoolableActor(bool bSimulatePhysics)
+{
+	SetupObjectState(bSimulatePhysics);
+
+	// Should be overridden if not desired.
+	if(bSimulatePhysics && ActivationInfo.PhysicsBodySleepDelay > 0)
+	{
+		RemovePhysicsSleepDelay();
+		FTimerDelegate TimerDel;
+		TimerDel.BindWeakLambda(this, [this]
+		{
+			SkeletalMeshComponent->PutAllRigidBodiesToSleep();
+			SkeletalMeshComponent->SetCollisionProfileName(MeshSleepPhysicsProfile.Name);
+		});
+		GetWorld()->GetTimerManager().SetTimer(SleepPhysicsTimerHandle, TimerDel, ActivationInfo.PhysicsBodySleepDelay, false);
+	}
 }
 
 
@@ -138,10 +129,42 @@ void ABFPoolableSkeletalMeshActor::SetupObjectState(bool bSimulatePhysics)
 	SkeletalMeshComponent->SetSimulatePhysics(bSimulatePhysics);
 }
 
-void ABFPoolableSkeletalMeshActor::RemovePhysicsSleepDelay()
+
+// If successful this leads to the interface call OnObjectPooled.
+bool ABFPoolableSkeletalMeshActor::ReturnToPool()
 {
-	if(GetWorld()->GetTimerManager().IsTimerActive(SleepPhysicsTimerHandle))
-		GetWorld()->GetTimerManager().ClearTimer(SleepPhysicsTimerHandle);
+	if(bIsUsingBPHandle)
+	{
+		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
+			return BPObjectHandle->ReturnToPool();
+	}
+	else
+	{
+		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
+			return ObjectHandle->ReturnToPool();
+	}
+	return false;
+}
+
+
+void ABFPoolableSkeletalMeshActor::OnObjectPooled_Implementation()
+{
+	RemoveCurfew();
+	RemovePhysicsSleepDelay();
+
+	if(SkeletalMeshComponent->IsSimulatingPhysics())
+	{
+		// I noticed due to disabling SKM tick it causes the bones
+		// to resume from where they were last simulated if we don't refresh them.
+		SkeletalMeshComponent->SetSimulatePhysics(false);
+		SkeletalMeshComponent->RefreshBoneTransforms();
+	}
+	
+	SkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SkeletalMeshComponent->SetComponentTickEnabled(false);
+	ObjectHandle = nullptr;
+	BPObjectHandle = nullptr;
+	ActivationInfo = {};
 }
 
 
@@ -165,28 +188,21 @@ void ABFPoolableSkeletalMeshActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoo
 }
 
 
-void ABFPoolableSkeletalMeshActor::SetPoolableActorParams( const FBFPoolableSkeletalMeshActorDescription& ActivationParams)
+void ABFPoolableSkeletalMeshActor::FellOutOfWorld(const UDamageType& DmgType)
 {
-	ActivationInfo = ActivationParams; 
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	ReturnToPool();
 }
 
 
-void ABFPoolableSkeletalMeshActor::ActivatePoolableActor(bool bSimulatePhysics)
+void ABFPoolableSkeletalMeshActor::RemovePhysicsSleepDelay()
 {
-	SetupObjectState(bSimulatePhysics);
-
-	// Should be overridden if not desired.
-	if(bSimulatePhysics && ActivationInfo.PhysicsBodySleepDelay > 0)
-	{
-		RemovePhysicsSleepDelay();
-		FTimerDelegate TimerDel;
-		TimerDel.BindWeakLambda(this, [this]()
-		{
-			SkeletalMeshComponent->PutAllRigidBodiesToSleep();
-			SkeletalMeshComponent->SetCollisionProfileName(MeshSleepPhysicsProfile.Name);
-		});
-		GetWorld()->GetTimerManager().SetTimer(SleepPhysicsTimerHandle, TimerDel, ActivationInfo.PhysicsBodySleepDelay, false);
-	}
+	if(GetWorld()->GetTimerManager().IsTimerActive(SleepPhysicsTimerHandle))
+		GetWorld()->GetTimerManager().ClearTimer(SleepPhysicsTimerHandle);
 }
 
 
@@ -216,23 +232,6 @@ void ABFPoolableSkeletalMeshActor::RemoveCurfew()
 void ABFPoolableSkeletalMeshActor::OnCurfewExpired()
 {
 	ReturnToPool();
-}
-
-
-
-bool ABFPoolableSkeletalMeshActor::ReturnToPool()
-{
-	if(bIsUsingBPHandle)
-	{
-		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
-			return BPObjectHandle->ReturnToPool();
-	}
-	else
-	{
-		if(ObjectHandle.IsValid() && ObjectHandle->IsHandleValid())
-			return ObjectHandle->ReturnToPool();
-	}
-	return false;
 }
 
 

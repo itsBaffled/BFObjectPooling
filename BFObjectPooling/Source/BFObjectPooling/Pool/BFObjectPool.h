@@ -177,10 +177,10 @@ public:
 	}
 	
 public:
-	/* When activating and deactivating the pooled objects, if you dont like the default behaviour or want something more custom not at the Interface level then thats what these exist for,
-	 * if bound we simply call that delegate with the object being un-pooled or pooled at the correct time and let you handle the rest. A few use cases could be for static/skeletal meshes,
-	 * After spawning those actors and the curfew elapses ready to be returned to the pool, you may choose to leave the actor not hidden so they can remain there and next time its needed we then
-	 * go un-pool and handle that logic, a pooled object is just an object in a certain state (In my cases just see default behaviour in the pool), there is nothing magical about it and can easily be extended
+	/* When activating and deactivating the pooled objects, if you dont like the default behaviour or want something more custom not at the Interface level then that's what these exist for,
+	 * if bound we simply call that delegate with the object being un-pooled or pooled at the correct time and let you handle the rest.
+	 * A few use cases could be for static/skeletal meshes, After spawning those actors and the curfew elapses ready to be returned to the pool, you may choose to leave the actor not hidden but instead visible but inactive.
+	 * Then on subsequent un-pooling attempts it would just randomly take from the pool and activate it in the newer location.
 	 * ONLY BIND IF YOU WANT THIS BEHAVIOUR. */
 	UPROPERTY(BlueprintReadWrite)
 	FActivatePooledObjectOverride ActivateObjectOverride;
@@ -308,6 +308,7 @@ public:
 	
 	// Checks not only if the pools contains an Object with the given ID, but also if our specific handles checkout ID is the same as the pooled objects current checkout ID.
 	virtual bool IsObjectIDValid(int64 PoolID, int32 ObjectCheckoutID) const;
+	// Checks if the given object is inactive in the pool and not currently in use, also returns false if we can't find the object.
 	virtual bool IsObjectInactive(int64 PoolID, int32 ObjectCheckoutID) const;
 
 	int32 GetPoolSize() const { return PoolContainer->ObjectPool.Num(); }

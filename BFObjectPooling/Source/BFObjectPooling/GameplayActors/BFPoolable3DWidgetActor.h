@@ -8,6 +8,8 @@
 #include "BFObjectPooling/Pool/BFObjectPool.h"
 #include "BFPoolable3DWidgetActor.generated.h"
 
+class UWidgetComponent;
+
 
 /** All built in poolable actors have 3 main paths pre planned out for them and is typically how I expect most poolable actors to be used.
  *
@@ -21,7 +23,7 @@
  * 		or any other way you see fit to setup your object. */
 
 
-class UWidgetComponent;
+
 
 /** A generic 3D World Widget actor (opposed to a screen space UI widget) that already implements the IBFPooledObjectInterface and can be used for various situations
  * involving world widget spawning/pooling at runtime, such as interaction world space UI popups, hit damage numbers and more. Pooled widgets actors hold onto their widgets in case we
@@ -34,7 +36,7 @@ class BFOBJECTPOOLING_API ABFPoolable3DWidgetActor : public AActor, public IBFPo
 public:
 	ABFPoolable3DWidgetActor(const FObjectInitializer& ObjectInitializer);
 	virtual void OnObjectPooled_Implementation() override;
-	virtual void FellOutOfWorld(const class UDamageType& DmgType) override;
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
 	virtual void Tick(float Dt) override;
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
