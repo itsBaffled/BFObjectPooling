@@ -456,19 +456,24 @@ void TBFObjectPool<T,  Mode>::Tick(UWorld* World, float Dt)
 {
 	
 #if !UE_BUILD_SHIPPING
+	// We register tick through our Init function so we can never NOT be sure the owner and pool class is valid because we ensure/early out there 
 	if(BF::OP::CVarObjectPoolPrintPoolOccupancy.GetValueOnGameThread())
 	{
 		bfEnsure(PoolContainer.IsValid());
 		FString FormatString = FString::Format(TEXT("Object Pool {0} {1} \n- Total Size:{2}/{3}\n- Active Objects: {4}\n- Inactive Objects: {5}\n- Max Inactive Occupancy: {6}\n- Cooldown Time: {7}"),
-			{ PoolInitInfo.PoolClass->GetName(), GetNameSafe(PoolInitInfo.Owner), PoolContainer->ObjectPool.Num(), PoolInitInfo.PoolLimit ,PoolContainer->ObjectPool.Num() - PoolContainer->InactiveObjectIDPool.Num(),
+			{ GetNameSafe(PoolInitInfo.PoolClass), GetNameSafe(PoolInitInfo.Owner), PoolContainer->ObjectPool.Num(), PoolInitInfo.PoolLimit ,PoolContainer->ObjectPool.Num() - PoolContainer->InactiveObjectIDPool.Num(),
 				PoolContainer->InactiveObjectIDPool.Num(), GetMaxObjectInactiveOccupancySeconds(), PoolInitInfo.CooldownTimeSeconds });
+
+		// Each log is based on the pools unique memory address and the GPlayInEditorID to ensure we can differentiate between pools even in the same PIE session.
+		uint64 UniqueKey = GetTypeHash(reinterpret_cast<uint64>(this)) + GPlayInEditorID;
 
 		if(World->GetNetMode() == NM_DedicatedServer || !GEngine)
 			UE_LOGFMT(LogTemp, Warning, "{0}", FormatString);
 		else
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, FormatString);
+			GEngine->AddOnScreenDebugMessage(UniqueKey, 8.f, FColor::Green, FormatString);
 	}
 #endif
+	
 	
 	EvaluatePoolOccupancy();
 }
