@@ -32,6 +32,7 @@ class BFOBJECTPOOLING_API ABFPoolableSkeletalMeshActor : public AActor, public I
 public:
 	ABFPoolableSkeletalMeshActor(const FObjectInitializer& ObjectInitializer);
 	virtual void OnObjectPooled_Implementation() override;
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
 	
 	// For easy fire and forget usage, will invalidate the InHandle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Skeletal Mesh Actor", meta=(DisplayName="Fire And Forget"))

@@ -34,6 +34,7 @@ public:
 	ABFPoolableSoundActor(const FObjectInitializer& ObjectInitializer); 
 	virtual void PostInitializeComponents() override;
 	virtual void BeginDestroy() override;
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
 	virtual void OnObjectPooled_Implementation() override;
 
 	

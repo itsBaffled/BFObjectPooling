@@ -1,5 +1,4 @@
-﻿using System;
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 
 public class BFObjectPooling : ModuleRules
 {

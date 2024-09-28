@@ -73,6 +73,20 @@ void ABFPoolableStaticMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoola
 }
 
 
+void ABFPoolableStaticMeshActor::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	
+	RemoveCurfew();
+	ReturnToPool();
+}
+
+
+
 void ABFPoolableStaticMeshActor::SetupObjectState(bool bSimulatePhysics)
 {
 	bfValid(ActivationInfo.Mesh); // you must set the mesh

@@ -34,6 +34,7 @@ class BFOBJECTPOOLING_API ABFPoolable3DWidgetActor : public AActor, public IBFPo
 public:
 	ABFPoolable3DWidgetActor(const FObjectInitializer& ObjectInitializer);
 	virtual void OnObjectPooled_Implementation() override;
+	virtual void FellOutOfWorld(const class UDamageType& DmgType) override;
 	virtual void Tick(float Dt) override;
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.

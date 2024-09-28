@@ -32,6 +32,7 @@ class BFOBJECTPOOLING_API ABFPoolableDecalActor : public AActor, public IBFPoole
 public:
 	ABFPoolableDecalActor(const FObjectInitializer& ObjectInitializer);
 	virtual void OnObjectPooled_Implementation() override;
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
 
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.

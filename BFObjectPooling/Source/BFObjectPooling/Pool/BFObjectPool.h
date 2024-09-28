@@ -474,7 +474,6 @@ void TBFObjectPool<T,  Mode>::Tick(UWorld* World, float Dt)
 	}
 #endif
 	
-	
 	EvaluatePoolOccupancy();
 }
 

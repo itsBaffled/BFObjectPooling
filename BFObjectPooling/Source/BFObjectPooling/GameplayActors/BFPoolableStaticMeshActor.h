@@ -30,6 +30,7 @@ class BFOBJECTPOOLING_API ABFPoolableStaticMeshActor : public AActor, public IBF
 public:
 	ABFPoolableStaticMeshActor(const FObjectInitializer& ObjectInitializer);
 	virtual void OnObjectPooled_Implementation() override;
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Static Mesh Actor", meta=(DisplayName="Fire And Forget"))

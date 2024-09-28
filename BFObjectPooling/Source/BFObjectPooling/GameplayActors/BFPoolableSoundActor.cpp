@@ -111,6 +111,22 @@ void ABFPoolableSoundActor::FireAndForget(
 }
 
 
+void ABFPoolableSoundActor::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+
+	// Very unlikely a sound would ever simulate and fall out of the world but I want to ensure we cant leak.
+	GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
+	RemoveCurfew();
+	ReturnToPool();
+}
+
+
+
 void ABFPoolableSoundActor::ActivatePoolableActor()
 {
 	SetupObjectState();

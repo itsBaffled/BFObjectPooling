@@ -57,6 +57,19 @@ void ABFPoolable3DWidgetActor::Tick(float Dt)
 }
 
 
+void ABFPoolable3DWidgetActor::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	
+	RemoveCurfew();
+	ReturnToPool();
+}
+
+
 void ABFPoolable3DWidgetActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolable3DWidgetActorDescription& ActivationParams, const FTransform& ActorTransform)
 {

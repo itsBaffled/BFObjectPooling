@@ -81,6 +81,19 @@ void ABFPoolableDecalActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDe
 }
 
 
+void ABFPoolableDecalActor::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	
+	RemoveCurfew();
+	ReturnToPool();
+}
+
+
 void ABFPoolableDecalActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.

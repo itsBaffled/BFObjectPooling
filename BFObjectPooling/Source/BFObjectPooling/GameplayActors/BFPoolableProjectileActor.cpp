@@ -30,6 +30,7 @@ ABFPoolableProjectileActor::ABFPoolableProjectileActor(const FObjectInitializer&
 
 void ABFPoolableProjectileActor::OnObjectPooled_Implementation()
 {
+	SetActorTickEnabled(true);
 	RemoveCurfew();
 	
 	ObjectHandle = nullptr;
@@ -77,7 +78,6 @@ void ABFPoolableProjectileActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
-	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 	
 	SetActorTransform(ActorTransform);
@@ -96,13 +96,25 @@ void ABFPoolableProjectileActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoola
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
-	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 	
 	SetActorTransform(ActorTransform);
 	ActivatePoolableActor();
 }
 
+
+
+void ABFPoolableProjectileActor::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Super::FellOutOfWorld(DmgType); do not want default behaviour here.
+#if !UE_BUILD_SHIPPING
+	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
+		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
+#endif
+	
+	RemoveCurfew();
+	ReturnToPool();
+}
 
 
 bool ABFPoolableProjectileActor::ReturnToPool()
