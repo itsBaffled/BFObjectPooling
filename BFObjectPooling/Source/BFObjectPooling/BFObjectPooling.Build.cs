@@ -4,8 +4,8 @@ public class BFObjectPooling : ModuleRules
 {
     public BFObjectPooling(ReadOnlyTargetRules Target) : base(Target)
     {
-        	PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-        
+        PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+        bUseUnity = false;
 
         
         PublicDependencyModuleNames.AddRange(

@@ -67,7 +67,7 @@ BF Object Pooling aims to be a simple to use yet powerful generic object pooling
 ---
 
 For convenience it's recommended to include `BFObjectPooling/BFObjectPoolingCore.h`
-
+- If you have linking issues building the plugin then please ensure whatever module is using it, also has the dependecies it has like UMG for example (See BFObjectPooling.Build.cs).
 
 C++ Code examples
 

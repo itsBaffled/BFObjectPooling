@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
+#include "BFObjectPooling/Pool/BFObjectPool.h"
 #include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "UObject/Object.h"
 #include "BFPooledObjectHandleBP.generated.h"
