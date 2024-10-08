@@ -189,11 +189,11 @@ public:
 	FDeactivatePooledObjectOverride DeactivateObjectOverride;
 	
 	
-	/* The owner of the pool, this is the actor that will own the pooled objects as well. Depending on the pool type this is super important,
-	 * For example a widget cannot be owned by an AActor but can be by a APlayerController.
-	 * The owner should ALWAYS outlive the pools lifetime.*/
+	/* The owner of the pool, this is the object that will own the pooled objects as well. Depending on the pool type different functionality can occur,
+	 * For example a UUserWidget pool is locked in with APlayerController being the owner, a pool of actor type will add the components to the owner actors instanced components if cast successfully. 
+	 * The pool owner should ALWAYS outlive the object pools lifetime.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	TObjectPtr<AActor> Owner = nullptr;
+	TObjectPtr<UObject> Owner = nullptr;
 
 	
 	/* When spawning the pooled objects this is used as the class to spawn, C++ side can leave unpopulated if you just want the templated class, BP side MUST set this. */
@@ -272,7 +272,7 @@ public:
 	// Owner should ALWAYS outlive the pool.
 	template<typename Ty>
 	Ty* GetOwner() const { return CastChecked<Ty>(PoolInitInfo.Owner.Get()); }
-	AActor* GetOwner() const { return PoolInitInfo.Owner.Get(); }
+	UObject* GetOwner() const { return PoolInitInfo.Owner.Get(); }
 	
 	// The pool MUST be instantiated via this Create method only.
 	static TBFObjectPoolPtr<T,  Mode> CreatePool() { return MakeShared<TBFObjectPool, Mode>(); }
@@ -417,8 +417,10 @@ void TBFObjectPool<T, Mode>::InitPool(const FBFObjectPoolInitParams& Info)
 	bfEnsure(Info.PoolType != EBFPoolType::Invalid); // Must set the pool type. 
 	bfEnsure(Info.InitialCount <= Info.PoolLimit); // Self explanatory.
 	bfValid(Info.Owner);
-	bfValid(Info.Owner->GetWorld());
+	bfEnsure(Info.PoolType != EBFPoolType::UserWidget || CastChecked<APlayerController>(Info.Owner)); // If using a widget pool, you must have a player controller set as the owner.
+	bfValid(Info.Owner->GetWorld()); // The owner must implement get world.
 	bfEnsure(!PoolContainer.IsValid() || PoolContainer->ObjectPool.Num() == 0); // You can't re-init a pool, you must clear it first or just make a new pool.
+	
 	if(!Info.Owner || Info.PoolType == EBFPoolType::Invalid ||
 		(PoolContainer.IsValid() && PoolContainer->ObjectPool.Num() > 0))
 		return;
@@ -618,7 +620,7 @@ FBFPooledObjectInfo* TBFObjectPool<T, Mode>::CreateNewPoolEntry()
 		{
 			AActor* NewPoolObject = nullptr;
 			FActorSpawnParameters SpawnParams;
-			SpawnParams.Owner = PoolInitInfo.Owner.Get();
+			SpawnParams.Owner = Cast<AActor>(PoolInitInfo.Owner.Get()); // Perfectly valid if the pool isn't owned by an AActor
 			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 			SpawnParams.ObjectFlags = Flags;
 			NewPoolObject = PoolInitInfo.Owner->GetWorld()->SpawnActor<AActor>(PoolInitInfo.PoolClass, SpawnParams);
@@ -633,9 +635,13 @@ FBFPooledObjectInfo* TBFObjectPool<T, Mode>::CreateNewPoolEntry()
 		{
 			UActorComponent* NewPoolObject = nullptr;
 			NewPoolObject = NewObject<UActorComponent>(PoolInitInfo.Owner.Get(), PoolInitInfo.PoolClass, NAME_None, Flags);
-			NewPoolObject->bAutoActivate = false; 
-			NewPoolObject->RegisterComponent();
-			PoolInitInfo.Owner->AddInstanceComponent(NewPoolObject);
+			NewPoolObject->bAutoActivate = false;
+
+			if(AActor* Actor = Cast<AActor>(PoolInitInfo.Owner))
+			{
+				Actor->AddInstanceComponent(NewPoolObject);
+				NewPoolObject->RegisterComponent();
+			}
 				
 			Object = NewPoolObject;
 			break;
@@ -643,6 +649,8 @@ FBFPooledObjectInfo* TBFObjectPool<T, Mode>::CreateNewPoolEntry()
 		case EBFPoolType::UserWidget:
 		{
 			UUserWidget* NewPoolObject = nullptr;
+
+			// Static assert inside forces me to compile time choose the owner, please use APlayerController when pooling widgets.
 			NewPoolObject = CreateWidget<UUserWidget>(CastChecked<APlayerController>(PoolInitInfo.Owner.Get()), PoolInitInfo.PoolClass);
 			NewPoolObject->AddToViewport();
 			NewPoolObject->SetVisibility(ESlateVisibility::Hidden); // Hide it by default until we un-pool the widget.
