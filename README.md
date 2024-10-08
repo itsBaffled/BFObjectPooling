@@ -66,6 +66,8 @@ BF Object Pooling aims to be a simple to use yet powerful generic object pooling
 
 ---
 
+For convenience it's recommended to include `BFObjectPooling/BFObjectPoolingCore.h`
+
 
 C++ Code examples
 
