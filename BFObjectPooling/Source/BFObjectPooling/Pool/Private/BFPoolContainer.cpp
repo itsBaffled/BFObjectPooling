@@ -21,6 +21,7 @@ UBFPoolContainer::UBFPoolContainer()
 	PrimaryContainerTick.TickInterval = TickInterval;
 }
 
+
 void UBFPoolContainer::Tick(float Dt)
 {
 	if(OwningPoolTickFunc)

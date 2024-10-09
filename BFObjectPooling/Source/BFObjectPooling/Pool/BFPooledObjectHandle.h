@@ -28,12 +28,12 @@ struct TBFObjectPool;
 
 /** TBFPooledObjectHandle:
  * When using objects from the pool, they are leased in the form of a shared pointer to this handle struct.
- * For convenience there are using statements above that I would recommend using.
+ * For convenience there are using statements above that I would recommend using (TBFPooledObjectHandlePtr).
  *
- * When taking a pooled object it is your responsibility to return it to the pool when you are finished this can be achieved by either nulling all handles or by specifically returning it to the pool.
- * This can be done with the ReturnToPool() method on the handle or by calling the pools ReturnToPool() method with the handle.
+ * When taking a pooled object it is your responsibility to return it to the pool when you are finished this can be achieved by either nulling all handles or by specifically returning it to the pool,
+ * This can be done with the `ReturnToPool()` method on the handle or by calling the pools `ReturnToPool()` method with the handle.
  *
- * Objects are able to be kept via the Steal() method, this will return the object and invalidate your handle, any copies of that handles shared pointer will also be invalidated.
+ * Objects are able to be kept via the `StealObject()` method, this will return the object and invalidate your handle, any copies of that handles shared pointer will also be invalidated.
  *
  * For the most convenience you should have some kind of functionality where you hand the pooled object its own handle and it will return itself to the pool when it is done. See GameplayActors folder for examples of sound and vfx.
  */

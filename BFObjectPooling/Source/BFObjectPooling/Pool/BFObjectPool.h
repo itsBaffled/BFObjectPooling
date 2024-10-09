@@ -29,17 +29,20 @@ using TBFObjectPoolPtr = TSharedPtr<TBFObjectPool<T, Mode>, Mode>;
  * The Pool Is Primarily Composed Of 3 Main Parts
  *
  * 1)- The Templated Struct Pool itself: `TBFObjectPool`
- *		- This handles interfacing and dealing with the pooled objects.
- *		- Proves easy to use API for getting, returning and stealing objects from the pool.
+ *		- The pool itself is responsible for maintaining the pooled objects while they are in an inactive state as well as providing an API for being interacted with.
+ *		- The pool should be stored only as a shared pointer to the pool itself, this means either TSharedPtr<TBFObjectPool<T, Mode>, Mode> (which is verbose) or use the using alias `TFBObjectPoolPtr<T, Mode>` 
+ *		- The only time you will need to referer to the pool as TBFObjectPool instead of TBFObjectPoolPtr is when first setting your pointer and creating the pool like so `MyPool = TBFObjectPool<MyType>::CreatePool()`
+ *
  *		
  * 2)- The Pool Container: `UBFPoolContainer`
- *		- This is only internally used by the pool and should not be interacted with directly.
- *		- Stores reflected pointers of all pooled objects and their information.
+ *		- UObject that is used to wrap pooled objects storage in a GC friendly way, handle ticking the pool and stores other meta data about the pooled objects.
+ *		- Should never be interacted with directly.
  *
- * 3)- The Pooled Object Handle: `TBFPooledObjectHandle` which is primary interacted with via shared pointer alias `TBFPooledObjectHandlePtr` for convenience.
- *		- when attempting to un-pool an object it is returned to you via shared pointer and wrapped within this handle struct, the returned pointer may only be null due to the pool being at capacity, otherwise it will always be a valid shared pointer to your new handle.
- *		- If you let all shared pointers to the handle go out of scope, the object will be returned to the pool automatically (assuming its able to and the object hasn't already been returned to the pool).
- *		- BP side wraps shared pointers via a struct and has easy to use function library API for interacting with the pool.
+ *
+ * 3)- The Pooled Object Handle: `TBFPooledObjectHandle` which is primary interacted with via shared pointer alias `TBFPooledObjectHandlePtr` for the same convenience reasons.
+ *		- When attempting to un-pool an object it is returned to you via shared pointer to the handle (`TBFPooledObjectHandle`), if unsuccessful like due to being at pool capacity the handle is a nullptr.
+ *		- If you let all shared pointers to the handle go out of scope, the pooled object will be returned to the pool automatically (assuming its able to and the object hasn't already been returned to the pool).
+ *		- BP side wraps shared pointers via a value struct that copied around and stored, it has easy to use function library API for interacting with the pooled object.
  *		- Due to sharing and copying of handle pointers you should always check for IsHandleValid() before using the handle if you are within a new scope where you can't be certain. This is
  *			because it may have already returned itself to the pool or it may have been "Stolen" via `StealObject()`. The IsHandleValid() function not only checks the objects validity but also compares our handle ID to see if
  *			it matches the pools latest ID, if it doesn't then the handle is considered invalid. 
@@ -48,7 +51,7 @@ using TBFObjectPoolPtr = TSharedPtr<TBFObjectPool<T, Mode>, Mode>;
  *
  * The pool is designed to be able to regularly query the inactive objects and remove them if they exceed the specified MaxObjectInactiveOccupancySeconds in the pool init function.
  * If you do not want this behaviour, you can leave ticking disabled on the pool. You also can optionally set the tick interval to a higher value to reduce the overhead of checking the pools occupancy.
- * NOTE: The pools debug console variables `BF.OP.PrintPoolOccupancy` and `BF.OP.EnableLogging` can help when debugging issues, the `PrintPoolOccupancy` requires your pool to enable ticking otherwise it will not log the pools occupancy.
+ * NOTE: The pools debug console variables `BF.OP.PrintPoolOccupancy 1` and `BF.OP.EnableLogging 1` can help when debugging issues, the `PrintPoolOccupancy` requires your pool to enable ticking otherwise it will not log the pools occupancy.
  *
  *
  * Increasing the object pool limit is possible, however, decreasing it is only possible if there are enough inactive objects to remove to reach the new limit.
@@ -56,7 +59,6 @@ using TBFObjectPoolPtr = TSharedPtr<TBFObjectPool<T, Mode>, Mode>;
  *
  *
  *
- * Creation of the pool must and should be done as a shared pointer, TBFObjectPoolPtr is a using alias to make it a little nicer.
  * Usage goes as follows:
  *
  * // Header file or wherever you want to store the pool.
@@ -65,19 +67,32 @@ using TBFObjectPoolPtr = TSharedPtr<TBFObjectPool<T, Mode>, Mode>;
  *
  *
  *
- * // BeginPlay or some other init function where you want to create the pool.
+ * // Note that if you set the ESP mode you also need to reflect that when creating the pool, so `TBFObjectPoolPtr<AMyFoo, ESPMode::ThreadSafe> MyPool;` and when creating it `MyPool = TBFObjectPool<AMyFoo, ESPMode::ThreadSafe>::CreatePool()`
+ * // BeginPlay or some other init function where you want to create and init the pool.
  * MyPool = TBFObjectPoolPtr<AMyFoo>::CreatePool(); // Use static factory Create method to create the pool and make sure to Init it before ANYTHING else.
+ *
+ * // The only NEEDED params to be filled out are these,
+ * // - the owner can be UObject or Actor **unless** the pool is of UserWidget type, then you MUST lock in APlayerController or child classes to be the pool owner.
+ * // - the pool type dictates how we create, activate and deactivate the pooled objects.
  * FBFObjectPoolInitParams Params;
+ * Params.Owner = this;
+ * Params.PoolType = EBFPoolType::Actor;
+ *
+ * // Fill out any other info like pool limit or pool size
  * Params.FillOutDefaults = whatever;
+ *
+ * // Initialize the pool and done, its ready to use!
  * MyPool->InitPool(Params);
  *
  *
  *
- * // Now during gameplay whenever you want to retrieve a pooled object you can do so like this:
+ *
+ * // IN GAMEPLAY now you can just access pooled objects like so
+ *
  * 	if(TBFPooledObjectHandlePtr<AMyFoo> Handle = ObjectPool->UnpoolObject(bAutoActivate))// Returns a pooled object via a shared handle ptr, if the param is false you must handle activating the object yourself, there is built in activation/deactivation logic already though.
  *	{
  *		// Do whatever you want with the object, my preferred method is to init the object and hand it back its own handle so it can do what it needs to do and return when needed. Like a sound would set the params and then return on sound finished
- *		auto* Obj = Handle->GetObject(); // This will templated in c++ and in BP you get the object as a UObject* for you to then cast. Do not store Obj but just use it in scope.
+ *		auto* Obj = Handle->GetObject(); // This is templated in c++ and in BP you get the object as a UObject* for you to then cast. Do not store Obj but just use it in scope.
  *		Obj->SomeObjectFunctionToSetThingsUp()
  *		Obj->SetPoolHandle(Handle); // This is a function I typically have on my pooled objects that takes the handle and stores it for later use, also invalidates your handle so you can't use it again.
  *	}
@@ -88,23 +103,23 @@ using TBFObjectPoolPtr = TSharedPtr<TBFObjectPool<T, Mode>, Mode>;
  *													 // you can query the pool for that tag, returns false if unable to locate within the inactive pool of objects.
  *
  * 
- * MyPool->ReturnToPool(Handle.ToSharedRef()); // Attempts to return the handle to the pool, can fail if the handle is stale but failing is perfectly valid and expected, especially if multiple handle copies exist.
+ * MyPool->ReturnToPool(Handle); // Attempts to return the handle to the pool, can fail if the handle is stale but failing is perfectly valid and expected, especially if multiple handle copies exist.
  * Handle->ReturnToPool(); // Returns the object to the pool via the handle, (Typically for fire and forget pooled objects otherwise you would be holding onto the handle yourself).
  *
  * 
- * MyPool->ClearPool(); // Clears the pool of all inactive objects. We do not clear in use ones.
- * MyPool->RemoveFromPool(PoolID, ObjectCheckoutID); // Removes a specific object from the pool ONLY if it is inactive and matches our ID. Will not remove active objects, use `StealObject)` for that.
- * MyPool->RemoveNumFromPool(NumToRemove); // Removes a specific number of inactive objects from the pool, if unable to remove the exact amount the returns false.
+ * MyPool->ClearInactiveObjectsPool(); // Clears the pool of all inactive objects. We do not clear in use ones.
+ * MyPool->RemoveInactiveObjectFromPool(PoolID, ObjectCheckoutID); // Removes a specific object from the pool ONLY if it is inactive and matches our ID. Will not remove active objects, use `StealObject)` for that.
+ * MyPool->RemoveInactiveNumFromPool(NumToRemove); // Removes a specific number of inactive objects from the pool, if unable to remove the exact amount the returns false.
  *
  *
  *
  * Usage of the pools handles are as follows:
  * Handles are created and returned as shared pointers, once all pointers to a particular handle are destroyed the object is returned to the pool automatically if it hasn't already,
- * you may also manually call `ReturnToPool` or `Steal` to invalidate existing copied shared pointers to the same handle, be sure to use `Handle->IsHandleValid()` to check.
+ * you may also manually call `ReturnToPool()` or `StealObject()` to invalidate existing copied shared pointers to the same handle, be sure to use `Handle->IsHandleValid()` to check.
  *
  * Code:
- * TBFPooledObjectHandlePtr<AMyFoo> Handle = MyPool->GetPooledObject(); // Again.. Should be stored in a larger scope  
- * Handle.IsValid(); // Checks the SharedPtr if the Handle object is valid, not related to the Handle objects validity. Ideally this shouldn't be needed since the nature of a shared pointer kinda keeps it alive for you.
+ * TBFPooledObjectHandlePtr<AMyFoo> Handle = MyPool->UnpoolObject(); // Again.. Should be stored in a larger scope
+ * Handle.IsValid(); // Checks the SharedPtr if the Handle object is valid, not related to the Handle objects validity. Ideally this shouldn't be needed after you know the returned handle was valid since the nature of a shared pointer kinda keeps it alive for you.
  * Handle->IsHandleValid(); // This checks if the handle is valid, this is what you'll want most likely, you could also technically do 'Handle.Get()->IsHandleValid()' but that's a bit verbose.
  * TBFPooledObjectHandlePtr<AMyFoo> ACopyOfMyHandlePtr = Handle; // Creates a reference counted copy of the handle, if you return the object to the pool via one of the handles, all other handles to the same object will be invalidated.
  * Handle->GetObject(); // This returns the object that the handle is holding, this is what you'll want to use to get the object but do not store it.
@@ -119,13 +134,13 @@ enum class EBFPoolType : uint8
 {
 	// You must select a valid pool type as this is what drives how the objects are created and they are activated and deactivated.
 	Invalid = 0,
-	// Actors have their owner set to the pools owner and are the most straight forward to use.
+	// If the pool is of Actor type then it will handle hiding and showing the actor, disabling tick and disabling collision as well as any custom IF functionality if you choose to implement it
 	Actor,			
-	// Components have their outer set to the pools owner as well as the components are registered and added to the owners instance components array.
+	// If the pool is of Component type then regular component activation logic as well as potentially being registered and added to the owners instance components array if the owner can be cast to actor as well as any custom IF functionality if you choose to implement it
 	Component,		
-	// (Not for 3D widgets) UserWidgets have their outer set to the pools owner, this means your pool owner must be compatible with UUserWidget (APlayerController is the expected owner).
+	// If the pool is of UserWidget type then it REQUIRES the owner be an APlayerController or child class, will handle collapsing and revealing the widgets as well as any custom IF functionality if you choose to implement it
 	UserWidget,		
-	// Objects are the simplest, we simply create the owner with the outer as the pools owner and that's it, no activation or deactivation logic can really be applied but the interface logic is still called.
+	// If the pool is of Object type then there isn't much out of the box activation/deactivation logic we can, relies on you to implement the IBFPooledObjectInterface for custom functionality
 	Object			
 };
 
@@ -201,18 +216,13 @@ public:
 	UClass* PoolClass = nullptr;
 
 	/* Pool type defines Activation/Deactivation logic as well as how new objects are created. This is important to not mix up, for example if you used a PoolableSoundActor it would be easy
-	 * to accidentally set it to a component because its main use is the component, same with a poolable Niagara actor but that would result in the wrong behaviour.
-	 * This should be the type of the Object being held within the pool, that's it.
-	 * for example:
-	 * - Actors: have their owner set to the owner of the pool
-	 * - Components: have their outer set to the owner of the pool and are registered with the owners component array.
-	 * - UserWidgets: have their owner set to the owner of the pool (Note this MUST be compatible with UUserWidget owner types such as APlayerController, UUserWidget, UWorld etc)
-	 * - UObjects: just have their outer set to the owner of the pool
-	 * stock uobjects dont come with much logic needed for Activating/deactivating see IBFPoooledObjectInterface if you need custom logic */
+	 * to accidentally set it to a component because its main use is the USoundComponent, same with a poolable Niagara actor and its UNiagaraComponent but that would result in the wrong behaviour since
+	 * the pool type defines how the objects are created as well as how they are treated when activating and deactivating.
+	 * This should be the type of the Object being held within the pool, that's it. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	EBFPoolType PoolType = EBFPoolType::Invalid;
 	
-	// Max num of objects this pull is allowed to create, can be increased/decreased via the pool at runtime.
+	// Max num of objects this pool is allowed to create, can be increased/decreased via the pool at runtime.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	int32 PoolLimit = 50;
 	

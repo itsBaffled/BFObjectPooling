@@ -48,8 +48,8 @@ namespace BF::OP
 		T* Component = NewObject<T>(Owner, Class, ComponentName, ObjectFlags);
 		bfValid(Component);
 		
-		Component->RegisterComponent();
 		Owner->AddInstanceComponent(Component);
+		Component->RegisterComponent();
 
 		return Component;
 	}
