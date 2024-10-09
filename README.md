@@ -89,7 +89,7 @@ C++ Code examples
 
  // Note that if you set the ESP mode you also need to reflect that when creating the pool, so if pool ptr was `TBFObjectPoolPtr<AMyFoo, ESPMode::ThreadSafe> MyPool;` the pool creation would be `MyPool = TBFObjectPool<AMyFoo, ESPMode::ThreadSafe>::CreatePool()`
  // BeginPlay or some other init function where you want to create and init the pool.
- MyPool = TBFObjectPoolPtr<AMyFoo, ESPMode::ThreadSafe>::CreatePool(); // Use static factory Create method to create the pool and make sure to Init it before ANYTHING else.
+ MyPool = TBFObjectPool<AMyFoo, ESPMode::ThreadSafe>::CreatePool(); // Use static factory Create method to create the pool and make sure to Init it before ANYTHING else.
 
  // The only NEEDED params to be filled out are these,
  // - the owner can be UObject or Actor **unless** the pool is of UserWidget type, then you MUST lock in APlayerController or child classes to be the pool owner.
