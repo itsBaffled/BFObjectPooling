@@ -70,6 +70,13 @@ You should never cache the object directly but only ever access it for short sco
 
 ---
 
+Installation Steps:
+- Clone the repo and copy the `BFObjectPooling` folder into your own projects `Plugins` folder at the root of your project, if you do not already have one then just make a folder along with your .uproject called `Plugins` and paste the `BFObjectPooling` folder inside. That should be it for BP only usage, plugins are automically loaded and usable in editor.
+- If you wish to use the plugin from c++, you now need to go into the module you wish to use the plugin with (this could just be your projects module located in Source), from there locate your modules `MyModule.Build.cs` folder and add the following line (or just append the modules to your existing dependencies).
+`PublicDependencyModuleNames.AddRange(new string[] { "BFObjectPooling", "UMG" });` and that's it. Enjoy 😊
+
+
+
 Tips:
 - For custom pooled actors (that arent my default provided ones) I recommend mimicking how I have functionality to hand the unpooled actor back its handle so it can return itself to the pool when it's done. See ABFPoolableSoundActor::FireAndForget for an example.
 - Use the core header `BFObjectPooling/BFObjectPoolingCore.h` which handles keeping everything conveniently in one place.
