@@ -9,6 +9,7 @@
 #include "BFPooledObjectHandle.h"
 #include "GameplayTags.h"
 #include "Blueprint/UserWidget.h"
+#include "Misc/EngineVersionComparison.h"
 #include "BFObjectPool.generated.h"
 
 struct FBFPooledObjectInfo;
