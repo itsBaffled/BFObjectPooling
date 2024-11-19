@@ -478,7 +478,11 @@ void TBFObjectPool<T,  Mode>::Tick(UWorld* World, float Dt)
 				PoolContainer->InactiveObjectIDPool.Num(), GetMaxObjectInactiveOccupancySeconds(), PoolInitInfo.CooldownTimeSeconds });
 
 		// Each log is based on the pools unique memory address and the GPlayInEditorID to ensure we can differentiate between pools even in the same PIE session.
+#if UE_VERSION_OLDER_THAN(5, 5, 0)
 		uint64 UniqueKey = GetTypeHash(reinterpret_cast<uint64>(this)) + GPlayInEditorID;
+#else
+		uint64 UniqueKey = GetTypeHash(reinterpret_cast<uint64>(this)) + UE::GetPlayInEditorID();
+#endif
 
 		if(World->GetNetMode() == NM_DedicatedServer || !GEngine)
 			UE_LOGFMT(LogTemp, Warning, "{0}", FormatString);
