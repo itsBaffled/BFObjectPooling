@@ -255,7 +255,7 @@ public:
 
 
 template<typename T, ESPMode Mode = ESPMode::NotThreadSafe> requires BF::OP::CIs_UObject<T>
-struct TBFObjectPool : public TSharedFromThis<TBFObjectPool<T, Mode>, Mode>
+struct TBFObjectPool : public TSharedFromThis<TBFObjectPool<T, Mode>, Mode> , FGCObject
 {
 	using FOnObjectPooled = TMulticastDelegate<void(bool bEnteredPool, int64 ID, int32 CheckoutID)>;
 	using FOnObjectAddedToPool = TMulticastDelegate<void(int64 ID, int32 CheckoutID)>;
@@ -278,8 +278,13 @@ public:
 
 	TBFObjectPool(TBFObjectPool&& Rhs) noexcept;
 	TBFObjectPool& operator=(TBFObjectPool&& Rhs) noexcept;
-	virtual ~TBFObjectPool() = default;
 
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+	{
+		Collector.AddReferencedObject(PoolContainer);
+	}
+	virtual FString GetReferencerName() const override {return TEXT("TBFObjectPool");}
+	
 	// Owner should ALWAYS outlive the pool.
 	template<typename Ty>
 	Ty* GetOwner() const { return CastChecked<Ty>(PoolInitInfo.Owner.Get()); }
@@ -371,7 +376,7 @@ protected:
 	// Called when an object is being used or returned from the pool
 	FOnObjectPooled OnObjectPooled;
 
-	TStrongObjectPtr<UBFPoolContainer> PoolContainer = nullptr;
+	TObjectPtr<UBFPoolContainer> PoolContainer = nullptr;
 	FBFObjectPoolInitParams PoolInitInfo;
 
 	// Ever incrementing ID that is statically assigned to each new object.
@@ -430,10 +435,10 @@ void TBFObjectPool<T, Mode>::InitPool(const FBFObjectPoolInitParams& Info)
 	bfValid(Info.Owner);
 	bfEnsure(Info.PoolType != EBFPoolType::UserWidget || CastChecked<APlayerController>(Info.Owner)); // If using a widget pool, you must have a player controller set as the owner.
 	bfValid(Info.Owner->GetWorld()); // The owner must implement get world.
-	bfEnsure(!PoolContainer.IsValid() || PoolContainer->ObjectPool.Num() == 0); // You can't re-init a pool, you must clear it first or just make a new pool.
+	bfEnsure(!IsValid(PoolContainer) || PoolContainer->ObjectPool.Num() == 0); // You can't re-init a pool, you must clear it first or just make a new pool.
 	
 	if(!Info.Owner || Info.PoolType == EBFPoolType::Invalid ||
-		(PoolContainer.IsValid() && PoolContainer->ObjectPool.Num() > 0))
+		(IsValid(PoolContainer) && PoolContainer->ObjectPool.Num() > 0))
 		return;
 
 	
@@ -441,8 +446,10 @@ void TBFObjectPool<T, Mode>::InitPool(const FBFObjectPoolInitParams& Info)
 	bIsActivateObjectOverridden = PoolInitInfo.ActivateObjectOverride.IsBound();
 	bIsDeactivateObjectOverridden = PoolInitInfo.DeactivateObjectOverride.IsBound();
 
-	if(!PoolContainer.IsValid()) // Reuse if we are re-initializing the pool.
-		PoolContainer = TStrongObjectPtr(NewObject<UBFPoolContainer>(Info.Owner.Get()));
+	if(!IsValid(PoolContainer)) // Reuse if we are re-initializing the pool.
+	{
+		PoolContainer = NewObject<UBFPoolContainer>(Info.Owner.Get());
+	}
 
 	PoolContainer->Init([WeakThis = this->AsWeak()](UWorld* World, float Dt)
 	{
@@ -473,7 +480,7 @@ void TBFObjectPool<T,  Mode>::Tick(UWorld* World, float Dt)
 	// We register tick through our Init function so we can never NOT be sure the owner and pool class is valid because we ensure/early out there 
 	if(BF::OP::CVarObjectPoolPrintPoolOccupancy.GetValueOnGameThread())
 	{
-		bfEnsure(PoolContainer.IsValid());
+		bfEnsure(IsValid(PoolContainer));
 		FString FormatString = FString::Format(TEXT("Object Pool {0} {1} \n- Total Size:{2}/{3}\n- Active Objects: {4}\n- Inactive Objects: {5}\n- Max Inactive Occupancy: {6}\n- Cooldown Time: {7}"),
 			{ GetNameSafe(PoolInitInfo.PoolClass), GetNameSafe(PoolInitInfo.Owner), PoolContainer->ObjectPool.Num(), PoolInitInfo.PoolLimit ,PoolContainer->ObjectPool.Num() - PoolContainer->InactiveObjectIDPool.Num(),
 				PoolContainer->InactiveObjectIDPool.Num(), GetMaxObjectInactiveOccupancySeconds(), PoolInitInfo.CooldownTimeSeconds });
@@ -578,7 +585,7 @@ template <typename T, ESPMode Mode> requires BF::OP::CIs_UObject<T>
 void TBFObjectPool<T, Mode>::SetMaxObjectInactiveOccupancySeconds(float MaxObjectInactiveOccupancySeconds)
 {
 	// You must call Init on your pool before trying to use anything on it.
-	bfEnsure(PoolContainer.IsValid());
+	bfEnsure(IsValid(PoolContainer));
 	
 	// Ensure that we are ticking if we have a value that's useful.
 	if(MaxObjectInactiveOccupancySeconds > 0.f)
@@ -598,7 +605,7 @@ requires BF::OP::CIs_UObject<T>
 void TBFObjectPool<T, Mode>::SetTickInterval(float InTickInterval)
 {
 	// You must call Init on your pool before trying to use anything on it.
-	bfEnsure(PoolContainer.IsValid());
+	bfEnsure(IsValid(PoolContainer));
 	PoolContainer->SetTickInterval(InTickInterval);
 	PoolInitInfo.PoolTickInfo.TickInterval = InTickInterval;
 }
@@ -609,7 +616,7 @@ requires BF::OP::CIs_UObject<T>
 void TBFObjectPool<T, Mode>::SetTickEnabled(bool bEnable)
 {
 	// You must call Init on your pool before trying to use anything on it.
-	bfEnsure(PoolContainer.IsValid());
+	bfEnsure(IsValid(PoolContainer));
 	PoolContainer->SetTickEnabled(bEnable);
 }
 
@@ -620,7 +627,7 @@ FBFPooledObjectInfo* TBFObjectPool<T, Mode>::CreateNewPoolEntry()
 {
 	SCOPED_NAMED_EVENT(TBFObjectPool_CreateNewPoolEntry, FColor::Green);
 	// You must call Init on your pool before trying to use anything on it.
-	bfEnsure(PoolContainer.IsValid());
+	bfEnsure(IsValid(PoolContainer));
 	
 	if(GetPoolSize() >= PoolInitInfo.PoolLimit)
 		return nullptr;
@@ -705,7 +712,7 @@ template<typename T, ESPMode Mode>
 requires BF::OP::CIs_UObject<T>
 TBFPooledObjectHandlePtr<T, Mode> TBFObjectPool<T, Mode>::UnpoolObject(bool bAutoActivate)
 {
-	bfEnsure(PoolContainer.IsValid() && IsValid(PoolInitInfo.Owner)); // have you initialized the pool?
+	bfEnsure(IsValid(PoolContainer) && IsValid(PoolInitInfo.Owner)); // have you initialized the pool?
 	// Might not have any free but we have space to make more.
 	if(PoolContainer->InactiveObjectIDPool.Num() == 0)
 	{
