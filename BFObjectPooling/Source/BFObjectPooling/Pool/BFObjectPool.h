@@ -258,7 +258,7 @@ template<typename T, ESPMode Mode = ESPMode::NotThreadSafe> requires BF::OP::CIs
 struct TBFObjectPool : public TSharedFromThis<TBFObjectPool<T, Mode>, Mode> , FGCObject
 {
 	using FOnObjectPooled = TMulticastDelegate<void(bool bEnteredPool, int64 ID, int32 CheckoutID)>;
-	using FOnObjectAddedToPool = TMulticastDelegate<void(int64 ID, int32 CheckoutID)>;
+	using FOnObjectAddedToPool = TMulticastDelegate<void(int64 ID, int32 CheckoutID, UObject* Object)>;
 	using FOnObjectRemovedFromPool = TMulticastDelegate<void(int64 ID, int32 CheckoutID)>;
 	
 protected:
@@ -336,7 +336,8 @@ public:
 	UWorld* GetWorld() const { return PoolInitInfo.Owner->GetWorld(); }
 	float GetMaxObjectInactiveOccupancySeconds() const { return PoolInitInfo.PoolTickInfo.MaxObjectInactiveOccupancySeconds; }
 
-	// Called after creating a new object and adding it to the pool.
+	// Called after creating a new object and adding it to the pool. You should not cache the object passed via this 
+	// delegate but instead use it only within the callback for any setup logic.
 	FOnObjectAddedToPool& GetOnObjectAddedToPool() { return OnObjectAddedToPool; }
 	// Called after removing an object from the pool.
 	FOnObjectRemovedFromPool& GetOnObjectRemovedFromPool() { return OnObjectRemovedFromPool; }
@@ -700,10 +701,10 @@ FBFPooledObjectInfo* TBFObjectPool<T, Mode>::CreateNewPoolEntry()
 	PoolContainer->InactiveObjectIDPool.Add(Info.ObjectPoolID);
 
 	if(Object->template Implements< UBFPooledObjectInterface>())
-		IBFPooledObjectInterface::Execute_OnObjectPooled(Object);
+		IBFPooledObjectInterface::Execute_OnObjectCreated(Object);
 
 	
-	OnObjectAddedToPool.Broadcast(Info.ObjectPoolID, Info.ObjectCheckoutID);
+	OnObjectAddedToPool.Broadcast(Info.ObjectPoolID, Info.ObjectCheckoutID, Info.PooledObject);
 	return NewInfo;
 }
 
