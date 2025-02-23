@@ -4,6 +4,7 @@
 #include "BFPoolableNiagaraActor.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+
 #include "BFObjectPooling/Pool/Private/BFObjectPoolHelpers.h"
 #include "BFObjectPooling/PoolBP/BFPooledObjectHandleBP.h"
 
@@ -15,8 +16,11 @@ ABFPoolableNiagaraActor::ABFPoolableNiagaraActor(const FObjectInitializer& Objec
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
-	NiagaraComponent = CreateDefaultSubobject<UNiagaraComponent>("NiagaraComponent");
+	static FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
+
+	static FName NiagaraComponentName{"NiagaraComponent"};
+	NiagaraComponent = CreateDefaultSubobject<UNiagaraComponent>(NiagaraComponentName);
 	NiagaraComponent->SetupAttachment(RootComponent);
 }
 
@@ -24,30 +28,58 @@ ABFPoolableNiagaraActor::ABFPoolableNiagaraActor(const FObjectInitializer& Objec
 void ABFPoolableNiagaraActor::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
-	GetNiagaraComponent()->OnSystemFinished.AddUniqueDynamic(this, &ABFPoolableNiagaraActor::OnNiagaraSystemFinished);
+
+	if (GetWorld()->IsGameWorld())
+	{
+		GetNiagaraComponent()->OnSystemFinished.AddUniqueDynamic(this, &ABFPoolableNiagaraActor::OnNiagaraSystemFinished);
+	}
 }
 
 
 void ABFPoolableNiagaraActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 		const FBFPoolableNiagaraActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
-	bfValid(ActivationParams.NiagaraSystem); // you must set the system
-
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
+	if (ActivationParams.NiagaraSystem == nullptr)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableNiagaraActor was handed a null niagara system to display, was this intentional?");
+		Handle.Handle->ReturnToPool();
+		return;
+	}
 
 	SetPoolHandleBP(Handle);
 	SetActorTransform(ActorTransform);
 	SetPoolableActorParams(ActivationParams);
-	
-	if(ActivationInfo.ActorCurfew > 0)
+
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
 	{
-		if(ActivationInfo.DelayedActivationTimeSeconds > 0)
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
+	
+	if(ActivationInfo.ActorCurfew > 0.f)
+	{
+		if(ActivationInfo.DelayedActivationTimeSeconds > 0.f)
 			ActivationInfo.ActorCurfew += ActivationInfo.DelayedActivationTimeSeconds;
 		
 		SetCurfew(ActivationInfo.ActorCurfew);
 	}
 
-	if(ActivationInfo.DelayedActivationTimeSeconds > 0)
+	if(ActivationInfo.DelayedActivationTimeSeconds > 0.f)
 	{
 		FTimerDelegate TimerDel;
 		TimerDel.BindWeakLambda(this, [this]()
@@ -64,17 +96,42 @@ void ABFPoolableNiagaraActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	}
 }
 
-
 void ABFPoolableNiagaraActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle,
-		const FBFPoolableNiagaraActorDescription& ActivationParams, const FTransform& ActorTransform)
+                                            const FBFPoolableNiagaraActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
-	bfValid(ActivationParams.NiagaraSystem); // you must set the system
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
+	if (ActivationParams.NiagaraSystem == nullptr)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableNiagaraActor was handed a null niagara system to display, was this intentional?");
+		Handle->ReturnToPool();
+		return;
+	}
 
 	// Even if delayed we set the transform and stay waiting hidden until the delayed activation time.
 	SetPoolHandle(Handle);
+
 	SetActorTransform(ActorTransform);
 	SetPoolableActorParams(ActivationParams);
+
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -101,7 +158,6 @@ void ABFPoolableNiagaraActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolable
 
 void ABFPoolableNiagaraActor::SetPoolableActorParams(const FBFPoolableNiagaraActorDescription& ActivationParams)
 {
-	bfValid(ActivationParams.NiagaraSystem); // You must set the system for a niagara actor otherwise what is the point.
 	ActivationInfo = ActivationParams;
 }
 
@@ -114,7 +170,6 @@ void ABFPoolableNiagaraActor::ActivatePoolableActor()
 }
 
 
-// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableNiagaraActor::ReturnToPool()
 {
 	bHasFinished = true;
@@ -136,9 +191,14 @@ bool ABFPoolableNiagaraActor::ReturnToPool()
 
 void ABFPoolableNiagaraActor::OnObjectPooled_Implementation()
 {
-	// Reset everything.
 	GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
 	RemoveCurfew();
+
+	if (bIsAttached)
+	{
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		bIsAttached = false;
+	}
 
 	ObjectHandle = nullptr;
 	BPObjectHandle = nullptr;
@@ -155,6 +215,7 @@ void ABFPoolableNiagaraActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoolable
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
 	Handle.Reset(); // Clear the handle so it can't be used again.
@@ -165,9 +226,10 @@ void ABFPoolableNiagaraActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.	
+	Handle.Invalidate(); // Clear the handle so it can't be used again.	
 }
 
 
@@ -212,9 +274,11 @@ bool ABFPoolableNiagaraActor::IsSystemLooping() const
 
 void ABFPoolableNiagaraActor::SetCurfew(float SecondsUntilReturn)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this,  &ABFPoolableNiagaraActor::OnCurfewExpired, SecondsUntilReturn);
+	if(SecondsUntilReturn > 0)
+	{
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this,  &ABFPoolableNiagaraActor::OnCurfewExpired, SecondsUntilReturn);
+	}
 }
 
 

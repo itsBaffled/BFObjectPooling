@@ -2,12 +2,12 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
-#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
-#include "BFObjectPooling/Pool/BFObjectPool.h"
-#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "Components/AudioComponent.h"
 #include "GameFramework/Actor.h"
+
 #include "BFPoolableActorHelpers.h"
+#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
+#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "BFPoolableSoundActor.generated.h"
 
 
@@ -24,7 +24,10 @@
  * 		or any other way you see fit to setup your object. */
 
 
-/** A generic poolable sound actor that already implements the IBFPooledObjectInterface and can be used for various situations involving sounds. */
+
+// --------------
+
+// A generic poolable sound actor that already implements the IBFPooledObjectInterface and can be used for various situations involving sounds.
 UCLASS(meta=(DisplayName="BF Poolable Sound Actor"))
 class BFOBJECTPOOLING_API ABFPoolableSoundActor : public AActor, public IBFPooledObjectInterface
 {
@@ -40,18 +43,22 @@ public:
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Sound Actor", meta=(DisplayName="Fire And Forget"))
-	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle, const FBFPoolableSoundActorDescription& ActivationParams, const FTransform& ActorTransform);
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableSoundActorDescription& ActivationParams, const FVector& ActorLocation, const FRotator& ActorRotation) {FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});}
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableSoundActorDescription& ActivationParams, const FVector& SystemLocation) {FireAndForget(Handle, ActivationParams, FTransform{SystemLocation});}
+	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle,
+								const FBFPoolableSoundActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
-	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableSoundActorDescription& ActivationParams, const FTransform& ActorTransform);
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableSoundActorDescription& ActivationParams,
+						const FVector& ActorLocation, const FRotator& ActorRotation);
 
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableSoundActorDescription& ActivationParams,
+						const FVector& SystemLocation);
+
+	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle, 
+								const FBFPoolableSoundActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 
 	
@@ -112,7 +119,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="BF| Poolable Sound Actor")
 	void CancelDelayedActivation();
 
-	// If you previously delayed the actor and now need to cancel and return, relies on you to have already passed the handle via SetPoolHandle. 
+	// If you previously delayed the actor and now need to cancel and return. Relies on you to have already passed the handle via SetPoolHandle. 
 	UFUNCTION(BlueprintCallable, Category="BF| Poolable Sound Actor")
 	void CancelDelayedActivationAndReturnToPool();
 
@@ -136,8 +143,7 @@ protected:
 	// Called just prior to being activated in the world.
 	virtual void SetupObjectState(); 
 protected:
-	/* BP pools store UObject handles for convenience and I cant template member functions (:
-	 * So I have decided for everyone that we non ThreadSafe for performance benefits, you are using Multithreading with BP typically. You can always implement your own classes anyway.  */
+	// Blueprint pools are wrappers around UObject Templated pools.
 	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr; 
 	TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe> ObjectHandle = nullptr;
 	
@@ -153,14 +159,29 @@ protected:
 	
 	UPROPERTY(Transient, BlueprintReadOnly)
 	uint32 bHasSoundFinished:1 = false;
+	
 	uint32 bIsUsingBPHandle:1 = false;
 	uint32 bWaitForSoundFinishBeforeCurfew:1 = false;
+	uint32 bIsAttached:1 = false;
 };
 
 
 
 
+inline void ABFPoolableSoundActor::FireAndForget( TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle,
+												const FBFPoolableSoundActorDescription& ActivationParams,
+												const FVector& SystemLocation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{SystemLocation});
+}
 
+
+inline void ABFPoolableSoundActor::FireAndForget( TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle,
+												const FBFPoolableSoundActorDescription& ActivationParams, const FVector& ActorLocation,
+												const FRotator& ActorRotation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});
+}
 
 
 

@@ -2,8 +2,9 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #include "BFPoolable3DWidgetActor.h"
-#include "BFObjectPooling/PoolBP/BFPooledObjectHandleBP.h"
 #include "Components/WidgetComponent.h"
+
+#include "BFObjectPooling/PoolBP/BFPooledObjectHandleBP.h"
 
 
 ABFPoolable3DWidgetActor::ABFPoolable3DWidgetActor(const FObjectInitializer& ObjectInitializer)
@@ -12,9 +13,13 @@ ABFPoolable3DWidgetActor::ABFPoolable3DWidgetActor(const FObjectInitializer& Obj
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
 
-	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
-	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
+	static const FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
+
+	static const FName WidgetComponentName{"WidgetComponent"};
+	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>(WidgetComponentName);
 	WidgetComponent->SetupAttachment(RootComponent);
+	WidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 
@@ -22,7 +27,7 @@ void ABFPoolable3DWidgetActor::Tick(float Dt)
 {
 	Super::Tick(Dt);
 	
-	if(IsValid(ActivationInfo.TargetComponent) && ActivationInfo.WidgetSpace != EBFWidgetSpace::Screen) // SS doesnt require this.
+	if(IsValid(ActivationInfo.TargetComponent) && ActivationInfo.WidgetSpace != EWidgetSpace::Screen) // SS doesn't require this.
 	{
 		FRotator Rot = (ActivationInfo.TargetComponent->GetComponentLocation() - GetActorLocation()).Rotation();
 		WidgetComponent->SetWorldRotation(Rot);
@@ -30,14 +35,17 @@ void ABFPoolable3DWidgetActor::Tick(float Dt)
 
 	float Curfew = ActivationInfo.ActorCurfew;
 	UCurveVector4* Curve = ActivationInfo.WidgetLifetimePositionAndSizeCurve;
-	if(Curfew > 0 && Curve) // Can only do this if know its lifetime so we can normalize and sample.
+	
+	// Can only do this if know its lifetime so we can normalize and sample.
+	if(Curfew > 0.f && IsValid(Curve))
 	{
 		float NormalizedTimeAlive = FMath::Clamp( ( GetWorld()->GetTimeSeconds() - StartingTime) / Curfew, 0.f, 1.f);
 		FVector4 CurveValue = Curve->GetVectorValue(NormalizedTimeAlive);
 		FVector PosOffset = FVector{CurveValue.X, CurveValue.Y, CurveValue.Z};
-		PosOffset = ActivationInfo.bInvertWidgetCurve ? -PosOffset : PosOffset; 
-		WidgetComponent->SetWorldLocation(AbsoluteStartLocation + WidgetComponent->GetComponentTransform().TransformVector(PosOffset));// Ensure our local space defined curve offset is sampled in WS
-		WidgetComponent->SetDrawSize(ActivationInfo.DrawSize * CurveValue.W);
+		PosOffset = ActivationInfo.bInvertWidgetCurve ? -PosOffset : PosOffset;
+		
+		WidgetComponent->SetRelativeLocation(PosOffset);
+		WidgetComponent->SetDrawSize(ActivationInfo.DrawSize * FMath::Max(CurveValue.W, 0.05f));
 	}
 }
 
@@ -46,11 +54,37 @@ void ABFPoolable3DWidgetActor::Tick(float Dt)
 void ABFPoolable3DWidgetActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolable3DWidgetActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid()); // You must have a valid handle.
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
+#if !UE_BUILD_SHIPPING
+	if (ActivationParams.WidgetClass == nullptr)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableWidgetActor was handed a null Widget class, was this intentional?");
+	}
+#endif
+
 	
 	SetPoolHandleBP(Handle);
 	SetPoolableActorParams(ActivationParams);
+	
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -64,15 +98,40 @@ void ABFPoolable3DWidgetActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 
 
 void ABFPoolable3DWidgetActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolable3DWidgetActor, ESPMode::NotThreadSafe>& Handle,
-	const FBFPoolable3DWidgetActorDescription& ActivationParams, const FTransform& ActorTransform)
+                                             const FBFPoolable3DWidgetActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.IsValid()); // You must have a valid handle.
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
+#if !UE_BUILD_SHIPPING
+	if (ActivationParams.WidgetClass == nullptr)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableWidgetActor was handed a null Widget class, was this intentional?");
+	}
+#endif
 	
 	SetPoolHandle(Handle);
 	SetPoolableActorParams(ActivationParams);
+
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
 	
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	SetActorHiddenInGame(false);
@@ -88,16 +147,6 @@ void ABFPoolable3DWidgetActor::SetPoolableActorParams( const FBFPoolable3DWidget
 	ActivationInfo = ActivationParams;
 }
 
-
-void ABFPoolable3DWidgetActor::ActivatePoolableActor()
-{
-	SetupObjectState();
-	AbsoluteStartLocation = GetActorLocation();
-	WidgetComponent->SetWorldLocation(AbsoluteStartLocation); // In case using curve to drive position, ensure we snap back.
-	bfValid(WidgetComponent->GetWidget());
-}
-
-
 void ABFPoolable3DWidgetActor::SetupObjectState()
 {
 	// Create new only if they differ or if we don't have a widget.
@@ -107,7 +156,7 @@ void ABFPoolable3DWidgetActor::SetupObjectState()
 	WidgetComponent->bCastFarShadow = ActivationInfo.bShouldCastShadow;
 	WidgetComponent->SetVisibility(true);
 	WidgetComponent->SetTickMode(ETickMode::Enabled);
-	WidgetComponent->SetWidgetSpace((EWidgetSpace)ActivationInfo.WidgetSpace);
+	WidgetComponent->SetWidgetSpace(ActivationInfo.WidgetSpace);
 	
 	WidgetComponent->SetTintColorAndOpacity(ActivationInfo.WidgetTintAndOpacity);
 	WidgetComponent->SetTickWhenOffscreen(ActivationInfo.bShouldTickWhenOffscreen);
@@ -116,14 +165,19 @@ void ABFPoolable3DWidgetActor::SetupObjectState()
 	WidgetComponent->SetTwoSided(ActivationInfo.bTwoSided);
 	
 	WidgetComponent->UpdateWidget();
-
 	StartingTime = GetWorld()->GetTimeSeconds();
+}
+
+
+void ABFPoolable3DWidgetActor::ActivatePoolableActor()
+{
+	SetupObjectState();
+	WidgetComponent->SetRelativeLocation(FVector::ZeroVector); // In case using curve to drive position, ensure we snap back.
 }
 
 
 bool ABFPoolable3DWidgetActor::ReturnToPool()
 {
-	// If successful this leads to the interface call OnObjectPooled.
 	if(bIsUsingBPHandle)
 	{
 		if(BPObjectHandle.IsValid() && BPObjectHandle->IsHandleValid())
@@ -141,13 +195,18 @@ bool ABFPoolable3DWidgetActor::ReturnToPool()
 void ABFPoolable3DWidgetActor::OnObjectPooled_Implementation()
 {
 	RemoveCurfew();
+
+	if (bIsAttached)
+	{
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		bIsAttached = false;
+	}
 	
 	ObjectHandle = nullptr;
 	BPObjectHandle = nullptr;
 
-	WidgetComponent->SetTickMode(ETickMode::Disabled);
-	WidgetComponent->SetWidgetSpace(EWidgetSpace::World);
 	WidgetComponent->SetVisibility(false);
+	WidgetComponent->SetTickMode(ETickMode::Disabled);
 	WidgetComponent->UpdateWidget();
 	ActivationInfo = {};
 }
@@ -157,9 +216,10 @@ void ABFPoolable3DWidgetActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Invalidate(); // Invalidate the handle so it can't be used again.
 }
 
 
@@ -167,6 +227,7 @@ void ABFPoolable3DWidgetActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoolabl
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
 	Handle.Reset(); // Clear the handle so it can't be used again.
@@ -186,9 +247,11 @@ void ABFPoolable3DWidgetActor::FellOutOfWorld(const UDamageType& DmgType)
 
 void ABFPoolable3DWidgetActor::SetCurfew(float SecondsUntilReturn)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolable3DWidgetActor::OnCurfewExpired, SecondsUntilReturn, false);
+	if(SecondsUntilReturn > 0.f)
+	{
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolable3DWidgetActor::OnCurfewExpired, SecondsUntilReturn, false);
+	}
 }
 
 

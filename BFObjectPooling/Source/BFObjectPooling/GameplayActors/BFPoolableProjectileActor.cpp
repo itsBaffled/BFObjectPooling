@@ -3,13 +3,15 @@
 
 
 #include "BFPoolableProjectileActor.h"
-#include "BFObjectPooling/Pool/Private/BFObjectPoolHelpers.h"
-#include "BFObjectPooling/PoolBP/BFPooledObjectHandleBP.h"
-#include "Niagara/Classes/NiagaraSystem.h"
 #include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
+
+#include "BFObjectPooling/Pool/Private/BFObjectPoolHelpers.h"
+#include "BFObjectPooling/PoolBP/BFPooledObjectHandleBP.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 
 
@@ -21,28 +23,35 @@ ABFPoolableProjectileActor::ABFPoolableProjectileActor(const FObjectInitializer&
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// Start with a SceneComponent in case we don't need a shape collision component.
-	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
+	static FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
 	RootComponent->SetMobility(EComponentMobility::Movable);
 	
-	ProjectileMovementComponent = CreateDefaultSubobject<UProjectileMovementComponent>("ProjectileMovementComponent");
+	static FName ProjectileMovementComponentName{"ProjectileMovementComponent"};
+	ProjectileMovementComponent = CreateDefaultSubobject<UProjectileMovementComponent>(ProjectileMovementComponentName);
 }
 
 
 void ABFPoolableProjectileActor::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
-	ProjectileMovementComponent->OnProjectileStop.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileStopped);
+
+	if (GetWorld()->IsGameWorld())
+	{
+		ProjectileMovementComponent->OnProjectileStop.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileStopped);
+	}
 }
 
 
 void ABFPoolableProjectileActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle, const FBFPoolableProjectileActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
 	
 	SetPoolHandleBP(Handle);
 	SetPoolableActorParams(ActivationParams);
 
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	SetActorEnableCollision(true);
@@ -52,15 +61,17 @@ void ABFPoolableProjectileActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle
 }
 
 
-void ABFPoolableProjectileActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle,
-	const FBFPoolableProjectileActorDescription& ActivationParams, const FTransform& ActorTransform)
-{
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
 
+void ABFPoolableProjectileActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle,
+                                               const FBFPoolableProjectileActorDescription& ActivationParams, const FTransform& ActorTransform)
+{
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
+	
 	SetPoolHandle(Handle);
 	SetPoolableActorParams(ActivationParams);
 
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	SetActorEnableCollision(true);
@@ -108,12 +119,11 @@ void ABFPoolableProjectileActor::SetupObjectState()
 	ProjectileMovementComponent->HomingTargetComponent = ActivationInfo.HomingTargetComponent;
 	ProjectileMovementComponent->HomingAccelerationMagnitude = ActivationInfo.HomingAccelerationSpeed;
 	
-	ProjectileMovementComponent->SetUpdatedComponent(RootComponent); // When we come to a full stop it auto nulls this for whatever reason epic?
+	ProjectileMovementComponent->SetUpdatedComponent(RootComponent);
 	ProjectileMovementComponent->SetComponentTickEnabled(true);
 }
 
 
-// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableProjectileActor::ReturnToPool()
 {
 	if(bIsUsingBPHandle)
@@ -137,6 +147,7 @@ void ABFPoolableProjectileActor::OnObjectPooled_Implementation()
 	
 	ObjectHandle = nullptr;
 	BPObjectHandle = nullptr;
+	bHandledOverlapOrCollision = false;
 
 	ActivationInfo = {};
 	ProjectileMovementComponent->SetComponentTickEnabled(false);
@@ -155,7 +166,7 @@ void ABFPoolableProjectileActor::OnObjectPooled_Implementation()
 	
 	if(UShapeComponent* CollisionComponent = Cast<UShapeComponent>(RootComponent))
 	{
-		// We may be changing collision components between re use so just clear all bindings and not worry about it.
+		// We may be changing collision components between re-use so just clear all bindings and not worry about it.
 		CollisionComponent->OnComponentHit.RemoveDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorHit);
 		CollisionComponent->OnComponentBeginOverlap.RemoveDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorOverlap);
 		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -167,9 +178,10 @@ void ABFPoolableProjectileActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset();
+	Handle.Invalidate();
 }
 
 
@@ -178,6 +190,7 @@ void ABFPoolableProjectileActor::SetPoolHandle(
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
 	Handle.Reset();
@@ -222,6 +235,7 @@ bool ABFPoolableProjectileActor::HandleComponentCreation()
 
 			Comp->SetBoxExtent(ActivationInfo.ProjectileCollisionShape.ShapeParams);
 			Comp->SetCollisionProfileName(ActivationInfo.ProjectileCollisionShape.CollisionProfile.Name);
+			Comp->SetGenerateOverlapEvents(true);
 			Comp->OnComponentHit.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorHit);
 			Comp->OnComponentBeginOverlap.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorOverlap);
 
@@ -252,6 +266,7 @@ bool ABFPoolableProjectileActor::HandleComponentCreation()
 
 			Comp->SetSphereRadius(ActivationInfo.ProjectileCollisionShape.ShapeParams.X);
 			Comp->SetCollisionProfileName(ActivationInfo.ProjectileCollisionShape.CollisionProfile.Name);
+			Comp->SetGenerateOverlapEvents(true);
 			Comp->OnComponentHit.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorHit);
 			Comp->OnComponentBeginOverlap.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorOverlap);
 
@@ -279,6 +294,7 @@ bool ABFPoolableProjectileActor::HandleComponentCreation()
 
 			Comp->SetCapsuleSize(ActivationInfo.ProjectileCollisionShape.ShapeParams.X, ActivationInfo.ProjectileCollisionShape.ShapeParams.Y);
 			Comp->SetCollisionProfileName(ActivationInfo.ProjectileCollisionShape.CollisionProfile.Name);
+			Comp->SetGenerateOverlapEvents(true);
 			Comp->OnComponentHit.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorHit);
 			Comp->OnComponentBeginOverlap.AddDynamic(this, &ABFPoolableProjectileActor::OnProjectileActorOverlap);
 
@@ -326,7 +342,6 @@ bool ABFPoolableProjectileActor::HandleComponentCreation()
 			OptionalStaticMeshComponent->SetMaterial(Slot, Material);
 
 		OptionalStaticMeshComponent->SetRelativeTransform(ActivationInfo.ProjectileMesh.RelativeTransform);
-		
 	}
 	else if(OptionalStaticMeshComponent) // We did need the component at one stage but no more lets hide it
 	{
@@ -364,9 +379,11 @@ bool ABFPoolableProjectileActor::HandleComponentCreation()
 
 void ABFPoolableProjectileActor::SetCurfew(float SecondsUntilReturn)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableProjectileActor::OnCurfewExpired, SecondsUntilReturn, false);
+	if(SecondsUntilReturn > 0.f)
+	{
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableProjectileActor::OnCurfewExpired, SecondsUntilReturn, false);
+	}
 }
 
 
@@ -390,16 +407,36 @@ void ABFPoolableProjectileActor::OnProjectileStopped_Implementation(const FHitRe
 	ActivationInfo.OnProjectileStoppedDelegate.ExecuteIfBound(HitResult);
 
 	if(ActivationInfo.bShouldReturnOnStop)
+	{
 		ReturnToPool();
+	}
+	else if (ActivationInfo.bShouldDisableCollisionOnStop)
+	{
+		// Otherwise we have invisible collision blocking things.
+		if (auto* Shape = Cast<UShapeComponent>(RootComponent))
+		{
+			Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+
+		if (!ActivationInfo.bShouldMeshSimulatePhysicsOnImpact && OptionalStaticMeshComponent)
+		{
+			OptionalStaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
 }
 
 
 void ABFPoolableProjectileActor::OnProjectileActorHit_Implementation(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
+	if (bHandledOverlapOrCollision || (ActivationInfo.bIgnoreCollisionWithOtherProjectiles && OtherActor->IsA<ABFPoolableProjectileActor>()))
+		return;
+	
 	ActivationInfo.OnProjectileHitOrOverlapDelegate.ExecuteIfBound(Hit, false);
 
 	if(ActivationInfo.bShouldReturnOnImpact)
+	{
 		ReturnToPool();
+	}
 	else if(ActivationInfo.bShouldMeshSimulatePhysicsOnImpact && OptionalStaticMeshComponent)
 	{
 		// Use the scene comps collision when wanting to simulate physics.
@@ -409,17 +446,28 @@ void ABFPoolableProjectileActor::OnProjectileActorHit_Implementation(UPrimitiveC
 
 		// Disable collision for the shape component otherwise we have an invisible shape blocking things.
 		if(auto* Shape = Cast<UShapeComponent>(RootComponent))
+		{
 			Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision); 
+		}
+
+		ProjectileMovementComponent->StopMovementImmediately();
 	}
+	
+	bHandledOverlapOrCollision = true;
 }
 
 
 void ABFPoolableProjectileActor::OnProjectileActorOverlap_Implementation(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	if (bHandledOverlapOrCollision || (ActivationInfo.bIgnoreCollisionWithOtherProjectiles && OtherActor->IsA<ABFPoolableProjectileActor>()))
+		return;
+	
 	ActivationInfo.OnProjectileHitOrOverlapDelegate.ExecuteIfBound(SweepResult, true);
 	
 	if(ActivationInfo.bShouldReturnOnImpact)
+	{
 		ReturnToPool();
+	}
 	else if(ActivationInfo.bShouldMeshSimulatePhysicsOnImpact && OptionalStaticMeshComponent)
 	{
 		// Use the scene comps collision when wanting to simulate physics.
@@ -429,6 +477,11 @@ void ABFPoolableProjectileActor::OnProjectileActorOverlap_Implementation(UPrimit
 
 		// Disable collision for the shape component otherwise we have an invisible shape blocking things.
 		if(auto* Shape = Cast<UShapeComponent>(RootComponent))
+		{
 			Shape->SetCollisionEnabled(ECollisionEnabled::NoCollision); 
+		}
+		
+		ProjectileMovementComponent->StopMovementImmediately();
 	}
+	bHandledOverlapOrCollision = true;
 }

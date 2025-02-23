@@ -21,6 +21,7 @@ public:
 	float LastTimeActive = 0.0f; // Last time this object was used in game world seconds, for culling inactive pool objects if that behaviour is enabled.
 	int16 ObjectCheckoutID = -1; // Every time an object is used from the pool and returned we increment this ID to ensure that other stale handles dont think they are the same just because their pool ID is the same.
 	uint8 bActive:1 = false; // Flag to determine if this object is currently in use or not.
+	uint8 bIsReclaimable:1 = false; // Flag to determine if its worth trying to locate it in the reclaimable object list.
 };
 
 
@@ -36,7 +37,13 @@ public:
 };
 
 template<>
-struct TStructOpsTypeTraits<FBFPoolContainerTickFunction> : public TStructOpsTypeTraitsBase2<FBFPoolContainerTickFunction> { enum { WithCopy = false }; };
+struct TStructOpsTypeTraits<FBFPoolContainerTickFunction> : public TStructOpsTypeTraitsBase2<FBFPoolContainerTickFunction>
+{
+	enum
+	{
+		WithCopy = false
+	};
+};
 
 
 
@@ -54,7 +61,7 @@ public:
 	void SetTickInterval(float InTickInterval);
 	bool GetTickEnabled() const {return PrimaryContainerTick.IsTickFunctionEnabled();}
 	UClass* TryGetPoolType() const;
-	
+
 public:
 	// Reflected container that stores each allocated object some info about them.
 	UPROPERTY()

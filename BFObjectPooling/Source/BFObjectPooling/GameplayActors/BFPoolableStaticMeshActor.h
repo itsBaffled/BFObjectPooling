@@ -2,11 +2,11 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
-#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
-#include "BFObjectPooling/Pool/BFObjectPool.h"
-#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "GameFramework/Actor.h"
+
 #include "BFPoolableActorHelpers.h"
+#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
+#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "BFPoolableStaticMeshActor.generated.h"
 
  
@@ -21,8 +21,10 @@
  * - Manual Control: You can manually control the poolable actor, you are responsible for acquiring the actors handle (like normal but you hang on to it until it's ready to return) and setting its params via SetPoolableActorParams() 
  * 		or any other way you see fit to setup your object. */
 
+// --------------
 
-/** A generic poolable static mesh actor that already implements the IBFPooledObjectInterface and can be used for various situations involving mesh spawning/pooling at runtime, such as gibs or bullet shells. */
+
+// A generic poolable static mesh actor that already implements the IBFPooledObjectInterface and can be used for various situations involving mesh spawning/pooling at runtime, such as gibs or bullet shells.
 UCLASS(meta=(DisplayName="BF Poolable Static Mesh Actor"))
 class BFOBJECTPOOLING_API ABFPoolableStaticMeshActor : public AActor, public IBFPooledObjectInterface
 {
@@ -35,17 +37,23 @@ public:
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Static Mesh Actor", meta=(DisplayName="Fire And Forget"))
-	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle, const FBFPoolableStaticMeshActorDescription& ActivationParams, const FTransform& ActorTransform);
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableStaticMeshActorDescription& ActivationParams, const FVector& ActorLocation, const FRotator& ActorRotation) {FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});}
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableStaticMeshActorDescription& ActivationParams, const FVector& ActorLocation) {FireAndForget(Handle, ActivationParams, FTransform{ActorLocation});}
+	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle,
+								const FBFPoolableStaticMeshActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableStaticMeshActorDescription& ActivationParams,
+						const FVector& ActorLocation,
+						const FRotator& ActorRotation);
+
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle, 
+	                   const FBFPoolableStaticMeshActorDescription& ActivationParams,
+	                   const FVector& ActorLocation);
+
 	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableStaticMeshActorDescription& ActivationParams, const FTransform& ActorTransform);
+								const FBFPoolableStaticMeshActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 	
 
 	
@@ -86,6 +94,9 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category="BF| Poolable Static Mesh Actor")
 	UStaticMeshComponent* GetStaticMeshComponent() const { return StaticMeshComponent; }
+
+	UFUNCTION(BlueprintCallable, Category="BF| Poolable Static Mesh Actor")
+	void SetPhysicSleepProfile(FCollisionProfileName Profile) { MeshSleepPhysicsProfile = Profile; }
 	
 	UFUNCTION(BlueprintCallable, Category="BF| Poolable Static Mesh Actor")
 	UStaticMesh* GetStaticMesh() const;
@@ -96,20 +107,41 @@ protected:
 	// Called just prior to being activated in the world.
 	virtual void SetupObjectState(bool bSimulatePhysics); 
 protected:
-	/* BP pools store UObject handles for convenience and I cant template member functions (:
-	 * So I have decided for everyone that we non ThreadSafe for performance benefits, you are using Multithreading with BP typically. You can always implement your own classes anyway.  */
-	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr; 
+	// Blueprint pools are wrappers around UObject Templated pools.
+	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr;
+	
 	TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe> ObjectHandle = nullptr;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="BF| Poolable Static Mesh Actor")
 	TObjectPtr<UStaticMeshComponent> StaticMeshComponent = nullptr;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="BF| Poolable Static Mesh Actor")
+	FCollisionProfileName MeshSleepPhysicsProfile = FCollisionProfileName{"Ragdoll"};
+
 	FBFPoolableStaticMeshActorDescription ActivationInfo;
 	FTimerHandle CurfewTimerHandle;
+	FTimerHandle SleepPhysicsTimerHandle;
 
-	UPROPERTY(Transient)
+
 	uint32 bIsUsingBPHandle:1 = false;
 	uint32 bWasSimulating:1 = false;
 };
 
 
+
+
+inline void ABFPoolableStaticMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle,
+													const FBFPoolableStaticMeshActorDescription& ActivationParams,
+													const FVector& ActorLocation,
+													const FRotator& ActorRotation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});
+}
+
+
+inline void ABFPoolableStaticMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle,
+												const FBFPoolableStaticMeshActorDescription& ActivationParams,
+												const FVector& ActorLocation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorLocation});
+}

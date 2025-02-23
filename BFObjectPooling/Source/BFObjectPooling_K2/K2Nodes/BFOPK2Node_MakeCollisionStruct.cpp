@@ -11,37 +11,37 @@
 
 namespace BF::OP
 {
-	const FString ZeroStringValue = "0";
-	const FString DefaultCollisionProfile = "WorldDynamic";
-	const FString CollisionShapeToolTip = "The type of collision shape to use for a scene component that we sweep. Entirely valid to have no collision shape at all.";
+	static const FString ZeroStringValue = "0";
+	static const FString DefaultCollisionProfile = "WorldDynamic";
+	static const FString CollisionShapeToolTip = "The type of collision shape to use for a scene component that we sweep. Entirely valid to have no collision shape at all.";
 
 	
-	const FText FunctionTitle = NSLOCTEXT("BFOP", "BFOPK2_MakeCollShape_Title", "Make FBFCollisionShapeDescription");
-	const FText FunctionCategory = NSLOCTEXT("BFOP", "BFOPK2_MakeCollShape_Category", "BFOPPool");
-	const FText FunctionTooltip = NSLOCTEXT("BFOP", "BFOPK2_MakeCollShape_ToolTip", "Makes a FBFCollisionShapeDescription struct, shape params are dynamically based on your input type.");
+	static const FText FunctionTitle = NSLOCTEXT("BFOP", "BFOPK2_MakeCollShape_Title", "Make FBFCollisionShapeDescription");
+	static const FText FunctionCategory = NSLOCTEXT("BFOP", "BFOPK2_MakeCollShape_Category", "BFOPPool");
+	static const FText FunctionTooltip = NSLOCTEXT("BFOP", "BFOPK2_MakeCollShape_ToolTip", "Makes a FBFCollisionShapeDescription struct, shape params are dynamically based on your input type.");
 
-	const FName FuncName = "MakeCollisionStruct";
-	const FName FuncParam1Name = "CollisionShape";
-	const FName FuncParam2Name = "CollisionProfile";
-	const FName FuncParam3Name = "XParam";
-	const FName FuncParam4Name = "YParam";
-	const FName FuncParam5Name = "ZParam";
-
-	
-	const FName InputPinParam1Name = "Collision Shape";
-	const FName InputPinParam2Name = "Collision Profile";
-	const FName InputPinParam3Name = "X Extent"; 
-	const FName InputPinParam4Name = "Y Extent";
-	const FName InputPinParam5Name = "Z Extent";
-	const FName OutputPinParamName = "Collision Struct";
+	static const FName FuncName = "MakeCollisionStruct";
+	static const FName FuncParam1Name = "CollisionShape";
+	static const FName FuncParam2Name = "CollisionProfile";
+	static const FName FuncParam3Name = "XParam";
+	static const FName FuncParam4Name = "YParam";
+	static const FName FuncParam5Name = "ZParam";
 
 	
-	const FText InputPinParam3FriendlyName_Radius = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_Radius", "Radius"); 
-	const FText InputPinParam4FriendlyName_Height = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_Height", "Half Height");
+	static const FName InputPinParam1Name = "Collision Shape";
+	static const FName InputPinParam2Name = "Collision Profile";
+	static const FName InputPinParam3Name = "X Extent"; 
+	static const FName InputPinParam4Name = "Y Extent";
+	static const FName InputPinParam5Name = "Z Extent";
+	static const FName OutputPinParamName = "Collision Struct";
 
-	const FText InputPinParam3FriendlyName_XExtent = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_ExtentX", "X Extent");
-	const FText InputPinParam4FriendlyName_YExtent = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_ExtentY", "Y Extent");
-	const FText InputPinParam5FriendlyName_ZExtent = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_ExtentZ", "Z Extent");
+	
+	static const FText InputPinParam3FriendlyName_Radius = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_Radius", "Radius"); 
+	static const FText InputPinParam4FriendlyName_Height = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_Height", "Half Height");
+
+	static const FText InputPinParam3FriendlyName_XExtent = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_ExtentX", "X Extent");
+	static const FText InputPinParam4FriendlyName_YExtent = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_ExtentY", "Y Extent");
+	static const FText InputPinParam5FriendlyName_ZExtent = NSLOCTEXT("BFOP","BFOPK2_MakeCollShape_ExtentZ", "Z Extent");
 }
 
 void UBFOPK2Node_MakeCollisionStruct::AllocateDefaultPins()

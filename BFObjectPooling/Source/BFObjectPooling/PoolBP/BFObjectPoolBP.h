@@ -6,16 +6,21 @@
 #include "BFObjectPoolBP.generated.h"
 
 
-/* Blueprint struct wrapper for an object pool.
-* Must use InitializeObjectPool() before trying to use object pool. See the BFObjectPoolingFunctionLibrary for API. */
+/** Blueprint struct wrapper for an object pool.
+* Must use `InitializeObjectPool` before trying to use object pool.
+* See the BFObjectPoolingFunctionLibrary for API. */
 USTRUCT(BlueprintType, meta = (DisplayName = "BF Object Pool"))
 struct BFOBJECTPOOLING_API FBFObjectPoolBP
 {
 	GENERATED_BODY()
 	
-public: // Purposely not exposing to BP, use correct BPFL API.
+public:
+	bool HasPoolBeenInitialized() const { return ObjectPool.IsValid() && ObjectPool->HasBeenInitialized(); }
+	
+public:
 	UPROPERTY()
 	FBFObjectPoolInitParams InitInfo;
+	
 	TBFObjectPoolPtr<UObject, ESPMode::NotThreadSafe> ObjectPool;
 };
 

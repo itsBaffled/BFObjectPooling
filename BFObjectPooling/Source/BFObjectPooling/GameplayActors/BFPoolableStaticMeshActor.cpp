@@ -14,10 +14,12 @@ ABFPoolableStaticMeshActor::ABFPoolableStaticMeshActor(const FObjectInitializer&
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// Was going to opt for StaticMesh as the root but this is more flexible in case you want offsets or different rotations.
-	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
+	static const FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
 	RootComponent->SetMobility(EComponentMobility::Movable);
-	
-	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("StaticMeshComponent");
+
+	static const FName StaticMeshComponentName{"StaticMeshComponent"};
+	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(StaticMeshComponentName);
 	StaticMeshComponent->SetupAttachment(RootComponent);
 }
 
@@ -25,12 +27,25 @@ ABFPoolableStaticMeshActor::ABFPoolableStaticMeshActor(const FObjectInitializer&
 void ABFPoolableStaticMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableStaticMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
+	
+	if (ActivationParams.Mesh == nullptr || ActivationParams.ActorCurfew < 0.f)
+	{
+#if !UE_BUILD_SHIPPING
+		if(ActivationParams.Mesh == nullptr)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed a null Mesh asset to display, was this intentional?");
+		else
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed invalid ActivationParams, ActorCurfew must be greater than 0.");
+#endif
+		Handle.Handle->ReturnToPool();
+		return;
+	}
 	
 	SetPoolHandleBP(Handle);
 	SetPoolableActorParams(ActivationParams);
 	
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	SetActorHiddenInGame(false);
@@ -41,15 +56,30 @@ void ABFPoolableStaticMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle
 }
 
 
+
+
 void ABFPoolableStaticMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableStaticMeshActor, ESPMode::NotThreadSafe>& Handle,
-	const FBFPoolableStaticMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
+                                               const FBFPoolableStaticMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
+	
+	if (ActivationParams.Mesh == nullptr || ActivationParams.ActorCurfew < 0.f)
+	{
+#if !UE_BUILD_SHIPPING
+		if(ActivationParams.Mesh == nullptr)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed a null Mesh asset to display, was this intentional?");
+		else
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed invalid ActivationParams, ActorCurfew must be greater than 0.");
+#endif
+		Handle->ReturnToPool();
+		return;
+	}
 	
 	SetPoolHandle(Handle);
 	SetPoolableActorParams(ActivationParams);
 	
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	SetActorHiddenInGame(false);
@@ -92,10 +122,20 @@ void ABFPoolableStaticMeshActor::SetupObjectState(bool bSimulatePhysics)
 	StaticMeshComponent->SetCollisionEnabled(ActivationInfo.CollisionEnabled);
 
 	StaticMeshComponent->SetSimulatePhysics(bSimulatePhysics);
+
+	if (ActivationInfo.PhysicsBodySleepDelay > 0.f)
+	{
+		FTimerDelegate TimerDel = FTimerDelegate::CreateWeakLambda(this,
+		[this]()
+		{
+			StaticMeshComponent->SetSimulatePhysics(false);
+			StaticMeshComponent->SetCollisionProfileName(MeshSleepPhysicsProfile.Name);
+		});
+		GetWorld()->GetTimerManager().SetTimer(SleepPhysicsTimerHandle, TimerDel, ActivationInfo.PhysicsBodySleepDelay, false);
+	}
 }
 
 
-// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableStaticMeshActor::ReturnToPool()
 {
 	if(bIsUsingBPHandle)
@@ -116,7 +156,8 @@ bool ABFPoolableStaticMeshActor::ReturnToPool()
 void ABFPoolableStaticMeshActor::OnObjectPooled_Implementation()
 {
 	RemoveCurfew(); 
-
+	GetWorld()->GetTimerManager().ClearTimer(SleepPhysicsTimerHandle);
+	
 	StaticMeshComponent->SetSimulatePhysics(false);
 	StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	
@@ -131,9 +172,10 @@ void ABFPoolableStaticMeshActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Invalidate();
 }
 
 
@@ -141,9 +183,10 @@ void ABFPoolableStaticMeshActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoola
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Reset();
 }
 
 
@@ -166,9 +209,11 @@ UStaticMesh* ABFPoolableStaticMeshActor::GetStaticMesh() const
 
 void ABFPoolableStaticMeshActor::SetCurfew(float SecondsUntilReturn)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableStaticMeshActor::OnCurfewExpired, SecondsUntilReturn, false);
+	if(SecondsUntilReturn > 0)
+	{
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableStaticMeshActor::OnCurfewExpired, SecondsUntilReturn, false);
+	}
 }
 
 

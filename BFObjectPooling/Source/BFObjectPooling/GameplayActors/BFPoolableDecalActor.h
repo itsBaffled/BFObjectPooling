@@ -2,11 +2,11 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
+#include "GameFramework/Actor.h"
+
 #include "BFPoolableActorHelpers.h"
-#include "BFObjectPooling/Pool/BFObjectPool.h"
 #include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
 #include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
-#include "GameFramework/Actor.h"
 #include "BFPoolableDecalActor.generated.h"
 
 
@@ -23,7 +23,9 @@
  * 		or any other way you see fit to setup your object. */
 
 
-/** A generic poolable decal actor, mostly for fire and forget decals during gameplay such as bullet impacts, blood splatters, foot steps etc. */
+// ------------- 
+
+// A generic poolable decal actor, mostly for fire and forget decals during gameplay such as bullet impacts, blood splatters, foot steps etc.
 UCLASS(meta = (DisplayName = "BF Poolable Decal Actor"))
 class BFOBJECTPOOLING_API ABFPoolableDecalActor : public AActor, public IBFPooledObjectInterface
 {
@@ -37,21 +39,26 @@ public:
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Decal Actor", meta=(DisplayName="Fire And Forget"))
-	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle, const FBFPoolableDecalActorDescription& ActivationParams, const FTransform& ActorTransform);
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableDecalActorDescription& ActivationParams, const FVector& ActorTransform, const FRotator& SystemRotation) {FireAndForget(Handle, ActivationParams, FTransform{SystemRotation, ActorTransform});}
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableDecalActorDescription& ActivationParams, const FVector& SystemLocation) {FireAndForget(Handle, ActivationParams, FTransform{SystemLocation});}
+	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle,
+								const FBFPoolableDecalActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableDecalActorDescription& ActivationParams,
+						const FVector& ActorTransform,
+						const FRotator& SystemRotation);
+
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle, 
+	                   const FBFPoolableDecalActorDescription& ActivationParams,
+	                   const FVector& SystemLocation);
+
 	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableDecalActorDescription& ActivationParams, const FTransform& ActorTransform);
+								const FBFPoolableDecalActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 
 	
-
 	/** Used when manually controlling this pooled actor, otherwise you should use FireAndForget. This is typically handed to the pooled actor because you are now ready to let the pooled actor handle its own
 	 * state and return itself to the pool whenever it finishes or curfew elapses. */
 	UFUNCTION(BlueprintCallable, Category="BF| Poolable Decal Actor", meta = (DisplayName = "Set Pool Handle"))
@@ -92,8 +99,7 @@ protected:
 	// Called just prior to being activated in the world.
 	virtual void SetupObjectState();
 protected:
-	/* BP pools store UObject handles for convenience and I cant template member functions (:
-	 * So I have decided for everyone that we non ThreadSafe for performance benefits, you are using Multithreading with BP typically. You can always implement your own classes anyway.  */
+	// Blueprint pools are wrappers around UObject Templated pools.
 	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr; 
 	TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe> ObjectHandle = nullptr;
 
@@ -102,9 +108,29 @@ protected:
 
 	FBFPoolableDecalActorDescription ActivationInfo;
 	FTimerHandle CurfewTimerHandle;
+	FTimerHandle FadeOutTimerHandle;
+;
 
-	UPROPERTY(Transient)
 	uint32 bIsUsingBPHandle:1 = false;
+	uint32 bIsAttached:1 = false;
 };
 
 
+
+
+
+inline void ABFPoolableDecalActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle,
+										const FBFPoolableDecalActorDescription& ActivationParams,
+										const FVector& ActorTransform,
+										const FRotator& SystemRotation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{SystemRotation, ActorTransform});
+}
+
+
+inline void ABFPoolableDecalActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle,
+										const FBFPoolableDecalActorDescription& ActivationParams,
+										const FVector& SystemLocation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{SystemLocation});
+}

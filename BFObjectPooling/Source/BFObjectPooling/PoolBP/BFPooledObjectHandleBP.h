@@ -9,14 +9,23 @@
 
 
 
-/* A generic BP friendly object pool handle. No matter the pool type, this is your key to accessing your un-pooled object.
- * Purposely not exposing Pointer as it may be invalid due to a copy of the same handle being returned or the object has already been stolen.
- * Use appropriate functions in BFObjectPoolingBlueprintFunctionLibrary to access the object. */
+/** A generic BP friendly object pool handle. No matter the pool type, this is your key to accessing your un-pooled object.
+ * Purposely not exposing access directly to the object as it may be invalid/stale due to a copy of the same handle being returned or the object has already been stolen.
+ * Use appropriate functions in BFObjectPoolingBlueprintFunctionLibrary to access the object such as `GetObjectFromHandle`. */
 USTRUCT(BlueprintType, meta=(DisplayName="BF Poolable Object Handle"))
 struct BFOBJECTPOOLING_API FBFPooledObjectHandleBP 
 {
 	GENERATED_BODY()
 public:
+	void Invalidate()
+	{
+		// Even after a handle has become invalid we allow the old ID's to be queried,
+		// keeping behaviour similar with the C++ version.
+		//PooledObjectID = -1;
+		//ObjectCheckoutID = -1;
+		Handle = nullptr;
+	}
+
 	void Reset()
 	{
 		PooledObjectID = -1;
@@ -27,6 +36,7 @@ public:
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	int64 PooledObjectID = -1;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	int32 ObjectCheckoutID = -1;
 

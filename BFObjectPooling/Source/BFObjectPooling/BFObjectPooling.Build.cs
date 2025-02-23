@@ -24,7 +24,7 @@ public class BFObjectPooling : ModuleRules
                 "CoreUObject",
                 "Engine",
                 "Slate",
-                "SlateCore",
+                "SlateCore", 
             }
         );
     }

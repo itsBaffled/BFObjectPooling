@@ -54,7 +54,7 @@ void UBFPoolContainer::SetTickInterval(float InTickInterval)
 UClass* UBFPoolContainer::TryGetPoolType() const
 {
 	if(ObjectPool.Num() > 0)
-		return  ObjectPool[0].PooledObject->GetClass();
+		return ObjectPool[0].PooledObject->GetClass();
 	
 	return nullptr;
 }

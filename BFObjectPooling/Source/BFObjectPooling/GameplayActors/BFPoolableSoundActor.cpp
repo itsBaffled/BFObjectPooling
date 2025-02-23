@@ -12,8 +12,11 @@ ABFPoolableSoundActor::ABFPoolableSoundActor(const FObjectInitializer& ObjectIni
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	RootComponent = CreateDefaultSubobject<USceneComponent>("Root");
-	AudioComponent = CreateDefaultSubobject<UAudioComponent>("AudioComponent");
+	static FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
+
+	static FName AudioComponentName{"AudioComponent"};
+	AudioComponent = CreateDefaultSubobject<UAudioComponent>(AudioComponentName);
 	AudioComponent->SetupAttachment( RootComponent);
 } 
 
@@ -21,19 +24,62 @@ ABFPoolableSoundActor::ABFPoolableSoundActor(const FObjectInitializer& ObjectIni
 void ABFPoolableSoundActor::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
-	AudioComponent->OnAudioFinished.AddDynamic(this, &ABFPoolableSoundActor::OnSoundFinished);
+
+	if (GetWorld()->IsGameWorld())
+	{
+		AudioComponent->OnAudioFinished.AddDynamic(this, &ABFPoolableSoundActor::OnSoundFinished);
+	}
 }
 
 
 void ABFPoolableSoundActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableSoundActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
-	bfValid(ActivationParams.Sound); // you must set the system
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
+	if (ActivationParams.Sound == nullptr || ActivationParams.StartingTimeOffset >= ActivationParams.Sound->GetDuration())
+	{
+		if (ActivationParams.Sound == nullptr)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSoundActor was handed a null sound asset to play, was this intentional?");
+		else
+			UE_LOGFMT(LogTemp, Warning, "PoolableSoundActor was handed a starting time offset greater than the sound duration, was this intentional?");
+		
+		Handle.Handle->ReturnToPool();
+		return;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (ActivationParams.Sound->IsLooping() && ActivationInfo.ActorCurfew <= 0)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableSoundActor was handed a looping sound {0} but no curfew was set, was this intentional, because it will never return unless you explicitly force it from the handle.",
+			ActivationParams.Sound->GetName());
+	}
+#endif
 
 	SetPoolHandleBP(Handle);
 	SetPoolableActorParams(ActivationParams);
 	SetActorTransform(ActorTransform);
+
+	
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
+	
 
 	// Ensure the curfew accounts for the delayed activation time if set.
 	if(ActivationInfo.ActorCurfew > 0)
@@ -58,17 +104,55 @@ void ABFPoolableSoundActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 }
 
 
+
 void ABFPoolableSoundActor::FireAndForget(
 	TBFPooledObjectHandlePtr<ABFPoolableSoundActor, ESPMode::NotThreadSafe>& Handle,
 	const FBFPoolableSoundActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
-	bfValid(ActivationParams.Sound); // you must set the system
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
+	if (ActivationParams.Sound == nullptr || ActivationParams.StartingTimeOffset >= ActivationParams.Sound->GetDuration())
+	{
+		if (ActivationParams.Sound == nullptr)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSoundActor was handed a null sound asset to play, was this intentional?");
+		else
+			UE_LOGFMT(LogTemp, Warning, "PoolableSoundActor was handed a starting time offset greater than the sound duration, was this intentional?");
+		
+		Handle->ReturnToPool();
+		return;
+	}
 
+#if !UE_BUILD_SHIPPING
+	if (ActivationParams.Sound->IsLooping() && ActivationInfo.ActorCurfew <= 0)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableSoundActor was handed a looping sound {0} but no curfew was set, was this intentional, because it will never return unless you explicitly force it from the handle.",
+			ActivationParams.Sound->GetName());
+	}
+#endif
 
 	SetPoolHandle(Handle);
 	SetPoolableActorParams(ActivationParams);
 	SetActorTransform(ActorTransform);
+
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
+	
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -76,8 +160,7 @@ void ABFPoolableSoundActor::FireAndForget(
 	if(ActivationInfo.DelayedActivationTimeSeconds > KINDA_SMALL_NUMBER)
 	{
 		FTimerHandle TimerHandle;
-		FTimerDelegate TimerDel;
-		TimerDel.BindUObject(this, &ABFPoolableSoundActor::ActivatePoolableActor);
+		FTimerDelegate TimerDel = FTimerDelegate::CreateUObject(this, &ABFPoolableSoundActor::ActivatePoolableActor);
 		GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDel, ActivationInfo.DelayedActivationTimeSeconds, false);
 	}
 	else // Start it now
@@ -96,13 +179,21 @@ void ABFPoolableSoundActor::SetPoolableActorParams(const FBFPoolableSoundActorDe
 void ABFPoolableSoundActor::ActivatePoolableActor()
 {
 	SetupObjectState();
-	bfEnsure(AudioComponent->Sound); // You must set the sound manually or via SetPoolableActorParams.
-	bfEnsure(ActivationInfo.StartingTimeOffset <= AudioComponent->Sound->GetDuration()); // Trying to start the sound with a time greater than the sound duration.
 	bHasSoundFinished = false;
 	StartTime = GetWorld()->GetTimeSeconds();
 	
-	if(ActivationInfo.FadeInTime < 0)
+	if(ActivationInfo.FadeInTime <= 0.f)
+	{
 		AudioComponent->Play(ActivationInfo.StartingTimeOffset); // SetupObjectState will trigger start via FadeIn if we are using that so don't play here.
+
+		// Sometimes if we have too many sound instances in the world, this can cause us to not play the sound,
+		// we handle that here otherwise it will never return to the pool.
+		if (!AudioComponent->IsPlaying())
+		{
+			UE_LOGFMT(LogTemp, Warning, "Failed to play sound, my be due to having too many instances of it in the world, returning to pool.");
+			OnSoundFinished();
+		}
+	}
 }
 
 
@@ -116,12 +207,11 @@ void ABFPoolableSoundActor::SetupObjectState()
 	AudioComponent->bReverb = ActivationInfo.bReverb;
 	AudioComponent->SetUISound(ActivationInfo.bUISound);
 
-	if(ActivationInfo.FadeInTime > 0)
-		AudioComponent->FadeIn(ActivationInfo.FadeInTime, ActivationInfo.VolumeMultiplier, ActivationInfo.StartingTimeOffset, (EAudioFaderCurve)ActivationInfo.FadeInCurve);
+	if(ActivationInfo.FadeInTime > 0.f)
+		AudioComponent->FadeIn(ActivationInfo.FadeInTime, ActivationInfo.VolumeMultiplier, ActivationInfo.StartingTimeOffset, ActivationInfo.FadeInCurve);
 }
 
 
-// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableSoundActor::ReturnToPool()
 {
 	bHasSoundFinished = true;
@@ -145,6 +235,12 @@ void ABFPoolableSoundActor::OnObjectPooled_Implementation()
 	GetWorld()->GetTimerManager().ClearTimer(DelayedActivationTimerHandle);
 	RemoveCurfew();
 
+	if (bIsAttached)
+	{
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		bIsAttached = false;
+	}
+
 	ObjectHandle.Reset();
 	BPObjectHandle.Reset();
 	bHasSoundFinished = false;
@@ -161,9 +257,10 @@ void ABFPoolableSoundActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Invalidate(); // Clear the handle so it can't be used again.
 }
 
 
@@ -171,9 +268,10 @@ void ABFPoolableSoundActor::SetPoolHandle( TBFPooledObjectHandlePtr<ABFPoolableS
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Reset();
 }
 
 
@@ -184,20 +282,22 @@ void ABFPoolableSoundActor::FellOutOfWorld(const UDamageType& DmgType)
 	if(BF::OP::CVarObjectPoolEnableLogging.GetValueOnGameThread() == true)
 		UE_LOGFMT(LogTemp, Warning, "{0} Fell out of map, auto returning to pool.", GetName());
 #endif
-	// Very unlikely a sound would ever simulate and fall out of the world but I want to ensure we cant leak.
+	// Very unlikely a sound would ever fall out of the world but I want to make sure we handle
+	// that case because the alternative is the default behaviour which is to destroy the actor.
 	ReturnToPool();
 }
 
 
 void ABFPoolableSoundActor::SetCurfew(float SecondsUntilReturn, bool bShouldWaitForSoundFinishBeforeCurfew)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-
-	// Update flag internally so OnCurfewExpired knows to wait for sound finish.
-	bWaitForSoundFinishBeforeCurfew = bShouldWaitForSoundFinishBeforeCurfew;
-	
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer( CurfewTimerHandle, this, &ABFPoolableSoundActor::OnCurfewExpired, SecondsUntilReturn, false );
+	if(SecondsUntilReturn > 0)
+	{
+		// Update flag internally so OnCurfewExpired knows to wait for sound finish.
+		bWaitForSoundFinishBeforeCurfew = bShouldWaitForSoundFinishBeforeCurfew;
+		
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer( CurfewTimerHandle, this, &ABFPoolableSoundActor::OnCurfewExpired, SecondsUntilReturn, false );
+	}
 }
 
 
@@ -220,6 +320,11 @@ void ABFPoolableSoundActor::OnSoundFinished()
 	// Takes only Pause time into account not real time.
 	if(GetAutoReturnOnSoundFinished() || (ActivationInfo.ActorCurfew > 0 && GetWorld()->GetTimeSeconds() > StartTime + ActivationInfo.ActorCurfew - 0.05))
 		ReturnToPool();
+	else
+	{
+		if(ActivationInfo.FadeOutTime > 0.f)
+			AudioComponent->FadeOut(ActivationInfo.FadeOutTime, 0.f, ActivationInfo.FadeInCurve);
+	}
 }
 
 
@@ -262,14 +367,14 @@ void ABFPoolableSoundActor::OnCurfewExpired()
 	{
 		if(ActivationInfo.FadeOutTime > 0.f)
 		{
-			AudioComponent->FadeOut(ActivationInfo.FadeOutTime, 0.f, (EAudioFaderCurve)ActivationInfo.FadeInCurve);
+			AudioComponent->FadeOut(ActivationInfo.FadeOutTime, 0.f, ActivationInfo.FadeInCurve);
 			return;
 		}
 
 		if (bWaitForSoundFinishBeforeCurfew)
 		{
 			float RemainingDuration = GetWorld()->GetTimeSeconds() - StartTime + AudioComponent->GetSound()->GetDuration();
-			if(RemainingDuration > 0.05)
+			if(RemainingDuration > 0.05f)
 			{
 				FTimerDelegate TimerDelegate;
 				TimerDelegate.BindUObject(this, &ABFPoolableSoundActor::OnCurfewExpired);
@@ -285,7 +390,8 @@ void ABFPoolableSoundActor::OnCurfewExpired()
 void ABFPoolableSoundActor::BeginDestroy()
 {
 	Super::BeginDestroy();
-	AudioComponent->OnAudioFinished.RemoveAll(this);
+	if (AudioComponent)
+		AudioComponent->OnAudioFinished.RemoveAll(this);
 }
 
 

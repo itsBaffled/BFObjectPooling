@@ -2,11 +2,11 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
-#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
-#include "BFObjectPooling/Pool/BFObjectPool.h"
-#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
-#include "BFPoolableActorHelpers.h"
 #include "GameFramework/Actor.h"
+
+#include "BFPoolableActorHelpers.h"
+#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
+#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "BFPoolableSkeletalMeshActor.generated.h"
 
 
@@ -23,7 +23,9 @@
  * 		or any other way you see fit to setup your object. */
 
 
-/** A generic poolable skeletal mesh actor that already implements the IBFPooledObjectInterface and can be used for various situations involving skeletal mesh spawning/pooling at runtime. */
+// --------------
+
+// A generic poolable skeletal mesh actor that already implements the IBFPooledObjectInterface and can be used for various situations involving skeletal mesh spawning/pooling at runtime.
 UCLASS(meta=(DisplayName="BF Poolable Skeletal Mesh Actor"))
 class BFOBJECTPOOLING_API ABFPoolableSkeletalMeshActor : public AActor, public IBFPooledObjectInterface
 {
@@ -36,17 +38,23 @@ public:
 	
 	// For easy fire and forget usage, will invalidate the InHandle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Skeletal Mesh Actor", meta=(DisplayName="Fire And Forget"))
-	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle, const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FTransform& ActorTransform);
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FVector& ActorTransform, const FRotator& SystemRotation) {FireAndForget(Handle, ActivationParams, FTransform{SystemRotation, ActorTransform});}
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FVector& SystemLocation) {FireAndForget(Handle, ActivationParams, FTransform{SystemLocation});}
+	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle,
+								const FBFPoolableSkeletalMeshActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableSkeletalMeshActorDescription& ActivationParams,
+						const FVector& ActorTransform,
+						const FRotator& SystemRotation);
+
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle, 
+	                   const FBFPoolableSkeletalMeshActorDescription& ActivationParams,
+	                   const FVector& SystemLocation);
+
 	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FTransform& ActorTransform);
+								const FBFPoolableSkeletalMeshActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 	
 
 	/** Used when manually controlling this pooled actor, otherwise you should use FireAndForget. This is typically handed to the pooled actor because you are now ready to let the pooled actor handle its own
@@ -101,8 +109,7 @@ protected:
 	virtual void RemovePhysicsSleepDelay();
 
 protected:
-	/* BP pools store UObject handles for convenience and I cant template member functions (:
-	 * So I have decided for everyone that we non ThreadSafe for performance benefits, you are using Multithreading with BP typically. You can always implement your own classes anyway.  */
+	// Blueprint pools are wrappers around UObject Templated pools.
 	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr; 
 	TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe> ObjectHandle = nullptr;
 
@@ -116,8 +123,24 @@ protected:
 	FTimerHandle CurfewTimerHandle;
 	FTimerHandle SleepPhysicsTimerHandle;
 
-	UPROPERTY(Transient)
 	uint32 bIsUsingBPHandle:1 = false;
 };
 
 
+
+
+inline void ABFPoolableSkeletalMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle,
+													const FBFPoolableSkeletalMeshActorDescription& ActivationParams,
+													const FVector& ActorTransform,
+													const FRotator& SystemRotation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{SystemRotation, ActorTransform});
+}
+
+
+inline void ABFPoolableSkeletalMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle,
+												const FBFPoolableSkeletalMeshActorDescription& ActivationParams,
+												const FVector& SystemLocation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{SystemLocation});
+}

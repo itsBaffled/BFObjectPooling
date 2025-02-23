@@ -2,8 +2,10 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
+#include "Components/AudioComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Engine/HitResult.h"
 #include "BFPoolableActorHelpers.generated.h"
-
 
 class UNiagaraSystem;
 class UCurveVector4;
@@ -22,30 +24,6 @@ enum class EBFCollisionShapeType : uint8
 	Capsule,
 	Box,
 };
-
-
-
-// 1:1 wrappers so I can get away with no include.
-
-// Defines a Poolable Actor Sounds Fade Curve
-UENUM(BlueprintType)
-enum class EBFPoolableAudioSoundCurve : uint8
-{
-	Linear = 0,
-	Logarithmic,
-	SCurve,
-	Sin
-};
-
-
-// Defines what space a poolable 3DWidget is displayed in.
-UENUM(BlueprintType)
-enum class EBFWidgetSpace : uint8
-{
-	World = 0,
-	Screen,
-};
-
 
 
 
@@ -85,6 +63,37 @@ public:
 	FVector ShapeParams = FVector::ZeroVector;
 };
 
+
+// Optional struct that if set will be used to define how this poolable actor attaches to the provided actor/component
+// The component takes precedence over the actor if both are set since a component is more explicit.
+USTRUCT(BlueprintType, meta=(DisplayName="BF Poolable Actor Attachment Description"))
+struct FBFPoolableActorAttachmentDescription
+{
+	GENERATED_BODY();
+public:
+	bool IsSet() const { return IsValid(AttachmentActor) || IsValid(AttachmentComponent); }
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TObjectPtr<AActor> AttachmentActor = nullptr;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TObjectPtr<USceneComponent> AttachmentComponent = nullptr;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName SocketName = NAME_None;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EAttachmentRule LocationRule = EAttachmentRule::KeepWorld;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EAttachmentRule RotationRule = EAttachmentRule::KeepWorld;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EAttachmentRule ScaleRule = EAttachmentRule::KeepWorld;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bWeldSimulatedBodies = false;
+};
 
 
 
@@ -217,6 +226,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	uint8 bShouldReturnOnStop:1 = false;
 
+	// If we are not going to return when we stop should we disable collision at least so it doesn't block other projectiles or actors.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	uint8 bShouldDisableCollisionOnStop:1 = false;
+
+	// If we spawn too quickly we can collide with our same type of projectile, this will ignore collision with other projectiles of the same type.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	uint8 bIgnoreCollisionWithOtherProjectiles:1 = true;
+
 };
 
 
@@ -259,6 +276,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	TObjectPtr<USceneComponent> TargetComponent = nullptr;
 
+	// Defines how want this 3D widget to attach to the given actor or component in the world.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FBFPoolableActorAttachmentDescription OptionalAttachmentParams;
+
 	/** Curve SHOULD be a normalized 0-1 range where XYZ define a relative offset to the widget after time and W defines its size,
 	 * this curve is sampled over the lifetime of the widget from start to curfew and applied in world space on the widget. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -268,7 +289,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FColor WidgetTintAndOpacity = FColor::White;
 
-	/* When defines the widgets size on screen. If bDrawAtDesiredSize is false and the widget is in world space
+	/** When defines the widgets size on screen. If bDrawAtDesiredSize is false and the widget is in world space
 	 * then its size will be scaled by the distance from the camera.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FVector2D DrawSize = FVector2D{256.f, 256.f};
@@ -280,16 +301,11 @@ public:
 
 	// What space to display the widget in.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	EBFWidgetSpace WidgetSpace = EBFWidgetSpace::World;
+	EWidgetSpace WidgetSpace = EWidgetSpace::World;
 
 	// Whether or not this widget should be drawn as a two sided.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	uint8 bTwoSided:1 = false;
-
-	/* Only applies if the widget is in world space, if true the widget will try to grow
-	 * and shrink scale based on distance from the camera to stay at the desired size. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	uint8 bDrawAtDesiredSize:1 = true;
 
 	// Should the widget cast shadows.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -318,6 +334,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	TObjectPtr<UMaterialInterface> DecalMaterial = nullptr;
 
+	// Defines how want this decal to attach to the given actor or component in the world.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FBFPoolableActorAttachmentDescription OptionalAttachmentParams;
+	
 	// World space extent of the decal.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FVector DecalExtent = FVector{256.f, 256.f, 256.f};
@@ -331,12 +351,16 @@ public:
 	 * the DecalLifetimeOpacity node in materials for you to have any effect.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float FadeInTime = .1f;
-	
+
 	/* Controls how quickly the decal fades out if above 0. Requires your material to use
 	 * the DecalLifetimeOpacity node in materials for you to have any effect.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float FadeOutTime = .1f;
 
+	// Screen size of the decal before it starts to fade out.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	float FadeScreenSize = .001f;
+	
 	// Higher values draw over lower values.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	int32 SortOrder = 0;
@@ -349,16 +373,21 @@ struct FBFPoolableNiagaraActorDescription
 {
 	GENERATED_BODY();
 public:
-	// The System to play.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	TObjectPtr<UNiagaraSystem> NiagaraSystem = nullptr;
+
+	// Defines how want this niagara system to attach to the given actor or component in the world.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FBFPoolableActorAttachmentDescription OptionalAttachmentParams;
+
 	
 	// If curfew is set then this delayed time is already accounted for and we will return at curfew + delay time.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float DelayedActivationTimeSeconds = -1.0f; 
 
 	/** Values above 0 drive how long until the pooled actor will attempt to auto return to the pool,
-	* requires you to have given the handle to the pooled actor either via SetPoolHandle or FireAndForget. Should opt for bAutoReturnOnSystemFinish when possible.*/
+	* requires you to have given the handle to the pooled actor either via SetPoolHandle or FireAndForget.
+	* Should opt for bAutoReturnOnSystemFinish when possible over this option.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float ActorCurfew = -1.0f;
 
@@ -379,10 +408,13 @@ struct FBFPoolableSoundActorDescription
 {
 	GENERATED_BODY();
 public:
-	// The sound to play.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	TObjectPtr<USoundBase> Sound = nullptr;
-
+	
+	// Defines how want this sound to attach to the given actor or component in the world.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FBFPoolableActorAttachmentDescription OptionalAttachmentParams;
+	
 	// Optional sound attenuation settings.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FSoundAttenuationSettings AttenuationSettings;
@@ -406,21 +438,21 @@ public:
 
 	// If above 0 when activating the sound you can specify a fade in time
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	float FadeInTime = .1f;
+	float FadeInTime = -1.0f;
 	
 	// If above 0 when the curfew elapses and the the sound is still playing will use this value to fade out audio and then return.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	float FadeOutTime = .1f;
+	float FadeOutTime = -1.0f;
 	
 	/** Values above 0 drive how long until the pooled actor will attempt to auto return to the pool,
 	* requires you to have given the handle to the pooled actor either via SetPoolHandle or FireAndForget.
-	* (Should be used when unable to take advantage of bAutoReturnOnSoundFinish).*/
+	* (Should be used when unable to take advantage of bAutoReturnOnSoundFinish). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float ActorCurfew = -1.0f;
 
 	// Sound curve to be applied when using audio fading.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	EBFPoolableAudioSoundCurve FadeInCurve = EBFPoolableAudioSoundCurve::Linear;
+	EAudioFaderCurve FadeInCurve = EAudioFaderCurve::Linear;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	uint8 bReverb:1 = true;
@@ -445,6 +477,7 @@ public:
 	// Collision Profile to use for the mesh.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FCollisionProfileName CollisionProfile = FCollisionProfileName(TEXT("Ragdoll"));
+
 	
 	// If using collision on the mesh, what type of collision to use, most of the time NoCollision or CollisionEnabled is enough, ragdolls require collision.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -477,7 +510,7 @@ public:
 	* should we waiting until we put all the physics bodies to sleep. By default the sleep collision profile is Ragdoll so we no longer interact.
 	* Should be overridden at the actor level if you do not want this behaviour by implementing something similar yourself. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	float PhysicsBodySleepDelay = 2.0f;
+	float PhysicsBodySleepDelay = -1.f;
 
 	/** When playing animations or simulating physics we need to enable ticking otherwise it just won't work, you can however
 	 * optionally set a tick interval for the mesh component here, anything above 0 will be used otherwise we stick to default tick interval of every frame.
@@ -524,6 +557,12 @@ public:
 	* requires you to have given the handle to the pooled actor either via SetPoolHandle or FireAndForget.*/
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	float ActorCurfew = 5.0f;
+
+	/* If simulating physics and this is above 0 then this defines how long after activating this poolable actor
+	 * should we waiting until we the physics body to sleep. By default the sleep collision profile is Ragdoll so we no longer interact.
+	 * Should be overridden at the actor level if you do not want this behaviour by implementing something similar yourself. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	float PhysicsBodySleepDelay = -1.f;
 
 	// If true the mesh will simulate physics.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)

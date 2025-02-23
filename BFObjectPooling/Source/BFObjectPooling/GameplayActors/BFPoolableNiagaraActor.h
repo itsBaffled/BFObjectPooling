@@ -3,11 +3,11 @@
 
 #pragma once
 #include "NiagaraSystem.h"
-#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
-#include "BFObjectPooling/Pool/BFObjectPool.h"
-#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
-#include "BFPoolableActorHelpers.h"
 #include "GameFramework/Actor.h"
+
+#include "BFPoolableActorHelpers.h"
+#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
+#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "BFPoolableNiagaraActor.generated.h"
 
 
@@ -28,8 +28,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPoolableNiagaraSystemFinished);
  * - Manual Control: You can manually control the poolable actor, you are responsible for acquiring the actors handle (like normal but you hang on to it until it's ready to return) and setting its params via SetPoolableActorParams() 
  * 		or any other way you see fit to setup your object. */
 
+// --------------
 
-/** A generic poolable niagara actor that already implements the IBFPooledObjectInterface and can be used for various situations involving vfx spawning/pooling at runtime, such as muzzle flashes, impact smoke, footsteps dust, etc. */
+// A generic poolable niagara actor that already implements the IBFPooledObjectInterface and can be used for various situations involving vfx spawning/pooling at runtime, such as muzzle flashes, impact smoke, footsteps dust, etc.
 UCLASS(meta=(DisplayName="BF Poolable Niagara Actor"))
 class BFOBJECTPOOLING_API ABFPoolableNiagaraActor : public AActor, public IBFPooledObjectInterface
 {
@@ -45,17 +46,23 @@ public:
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Sound Actor", meta=(DisplayName="Fire And Forget Initialize"))
-	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle, const FBFPoolableNiagaraActorDescription& ActivationParams, const FTransform& SystemTransform);
+	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle,
+								const FBFPoolableNiagaraActorDescription& ActivationParams,
+								const FTransform& SystemTransform);
 
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableNiagaraActorDescription& ActivationParams, const FVector& ActorLocation, const FRotator& ActorRotation) {FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});}
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableNiagaraActorDescription& ActivationParams, const FVector& ActorLocation) {FireAndForget(Handle, ActivationParams, FTransform{ActorLocation});}
-	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableNiagaraActorDescription& ActivationParams,
+						const FVector& ActorLocation,
+						const FRotator& ActorRotation);
+
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle, 
+	                   const FBFPoolableNiagaraActorDescription& ActivationParams,
+	                   const FVector& ActorLocation);
+
 	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableNiagaraActorDescription& ActivationParams, const FTransform& ActorTransform);
+								const FBFPoolableNiagaraActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 	
 
 	
@@ -127,8 +134,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="BF| Poolable Niagara Actor")
 	FOnPoolableNiagaraSystemFinished OnNiagaraSystemFinishedDelegate;
 protected:
-	/* BP pools store UObject handles for convenience and I cant template member functions (:
-	 * So I have decided for everyone that we non ThreadSafe for performance benefits, you are using Multithreading with BP typically. You can always implement your own classes anyway.  */
+	// Blueprint pools are wrappers around UObject Templated pools.
 	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr; 
 	TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe> ObjectHandle = nullptr;
 
@@ -139,9 +145,9 @@ protected:
 	FTimerHandle CurfewTimerHandle;
 	FTimerHandle DelayedActivationTimerHandle;
 
-	UPROPERTY(Transient, BlueprintReadOnly)
 	uint32 bHasFinished:1 = false;
 	uint32 bIsUsingBPHandle:1 = false;
+	uint32 bIsAttached:1 = false;
 };
 
 
@@ -152,6 +158,24 @@ protected:
 
 
 
+
+
+inline void ABFPoolableNiagaraActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle,
+											const FBFPoolableNiagaraActorDescription& ActivationParams,
+											const FVector& ActorLocation,
+											const FRotator& ActorRotation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});
+}
+
+
+
+inline void ABFPoolableNiagaraActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableNiagaraActor, ESPMode::NotThreadSafe>& Handle,
+											const FBFPoolableNiagaraActorDescription& ActivationParams,
+											const FVector& ActorLocation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorLocation});
+}
 
 
 

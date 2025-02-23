@@ -3,9 +3,10 @@
 
 
 #include "BFPoolableDecalActor.h"
+#include "Components/DecalComponent.h"
+
 #include "BFObjectPooling/PoolBP/BFPooledObjectHandleBP.h"
 #include "BFObjectPooling/Pool/Private/BFObjectPoolHelpers.h"
-#include "Components/DecalComponent.h"
 
 
 namespace BF::OP
@@ -14,15 +15,17 @@ namespace BF::OP
 }
 
 
-
 ABFPoolableDecalActor::ABFPoolableDecalActor(const FObjectInitializer& ObjectInitializer)
 : Super( ObjectInitializer )
 {
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
-	DecalComponent = CreateDefaultSubobject<UDecalComponent>("DecalMeshComponent");
+	static FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
+
+	static FName DecalComponentName{"DecalMeshComponent"};
+	DecalComponent = CreateDefaultSubobject<UDecalComponent>(DecalComponentName);
 	DecalComponent->SetupAttachment(RootComponent);
 }
 
@@ -30,13 +33,38 @@ ABFPoolableDecalActor::ABFPoolableDecalActor(const FObjectInitializer& ObjectIni
 void ABFPoolableDecalActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableDecalActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid()); // You must have a valid handle.
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
+	if (ActivationParams.DecalMaterial == nullptr)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableDecalActor was handed a null material to display, was this intentional?");
+		Handle.Handle->ReturnToPool();
+		return;
+	}	
 	
 	SetPoolHandleBP(Handle);
 	SetPoolableActorParams(ActivationParams);
+
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
 	
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	SetActorHiddenInGame(false);
@@ -50,11 +78,37 @@ void ABFPoolableDecalActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 void ABFPoolableDecalActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableDecalActor, ESPMode::NotThreadSafe>& Handle,
 	const FBFPoolableDecalActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.IsValid()); // You must have a valid handle.
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
+	if (ActivationParams.DecalMaterial == nullptr)
+	{
+		UE_LOGFMT(LogTemp, Warning, "PoolableDecalActor was handed a null material to display, was this intentional?");
+		Handle->ReturnToPool();
+		return;
+	}
 	
 	SetPoolHandle(Handle);
 	SetPoolableActorParams(ActivationParams);
+
+	if (ActivationInfo.OptionalAttachmentParams.IsSet())
+	{
+		FBFPoolableActorAttachmentDescription& P = ActivationInfo.OptionalAttachmentParams;
+		if (P.AttachmentComponent != nullptr)
+		{
+			AttachToComponent(ActivationInfo.OptionalAttachmentParams.AttachmentComponent,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+			
+			bIsAttached = true;
+		}
+		else
+		{
+			AttachToActor(ActivationInfo.OptionalAttachmentParams.AttachmentActor,
+				FAttachmentTransformRules(P.LocationRule, P.RotationRule, P.ScaleRule, P.bWeldSimulatedBodies), P.SocketName);
+
+			bIsAttached = true;
+		}
+	}
+	
 	
 	if(ActivationInfo.ActorCurfew > 0)
 		SetCurfew(ActivationInfo.ActorCurfew);
@@ -80,10 +134,10 @@ void ABFPoolableDecalActor::ActivatePoolableActor()
 
 void ABFPoolableDecalActor::SetupObjectState()
 {
-	bfValid(ActivationInfo.DecalMaterial); // you must set the decal material
 	DecalComponent->SetMaterial(0, ActivationInfo.DecalMaterial);
 	DecalComponent->DecalSize = ActivationInfo.DecalExtent;
 	DecalComponent->SortOrder = ActivationInfo.SortOrder;
+	DecalComponent->FadeScreenSize = ActivationInfo.FadeScreenSize;
 	
 	if(ActivationInfo.FadeInTime > 0)
 	{
@@ -119,6 +173,13 @@ bool ABFPoolableDecalActor::ReturnToPool()
 void ABFPoolableDecalActor::OnObjectPooled_Implementation()
 {
 	RemoveCurfew();
+	GetWorld()->GetTimerManager().ClearTimer(FadeOutTimerHandle);
+
+	if (bIsAttached)
+	{
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		bIsAttached = false;
+	}
 
 	DecalComponent->FadeInDuration = 0.f;
 	DecalComponent->FadeInStartDelay = 0.f;
@@ -135,9 +196,10 @@ void ABFPoolableDecalActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Handle)
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Invalidate(); // Invalidate the handle so it can't be used again.
 }
 
 
@@ -145,9 +207,10 @@ void ABFPoolableDecalActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoolableDe
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Reset(); // Invalidate the handle so it can't be used again.
 }
 
 
@@ -164,9 +227,11 @@ void ABFPoolableDecalActor::FellOutOfWorld(const UDamageType& DmgType)
 
 void ABFPoolableDecalActor::SetCurfew(float SecondsUntilReturn)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableDecalActor::OnCurfewExpired, SecondsUntilReturn, false);
+	if(SecondsUntilReturn > 0)
+	{
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableDecalActor::OnCurfewExpired, SecondsUntilReturn, false);
+	}
 }
 
 
@@ -192,10 +257,13 @@ void ABFPoolableDecalActor::OnCurfewExpired()
 		else
 			DecalComponent->MarkRenderStateDirty();
 
-		FTimerDelegate TimerDel;
-		FTimerHandle TimerHandle;
-		TimerDel.BindWeakLambda(this, [this]() { ReturnToPool(); });
-		GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDel, DecalComponent->FadeDuration, false);
+		FTimerDelegate TimerDel = FTimerDelegate::CreateWeakLambda(this,
+			[this]()
+			{
+				ReturnToPool();
+			}
+		);
+		GetWorld()->GetTimerManager().SetTimer(FadeOutTimerHandle, TimerDel, DecalComponent->FadeDuration, false);
 		return;
 	}
 	ReturnToPool();

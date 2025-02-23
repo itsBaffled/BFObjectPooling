@@ -12,10 +12,12 @@ ABFPoolableSkeletalMeshActor::ABFPoolableSkeletalMeshActor(const FObjectInitiali
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	RootComponent = CreateDefaultSubobject<USceneComponent>("RootComponent");
+	static FName RootComponentName{"RootComponent"};
+	RootComponent = CreateDefaultSubobject<USceneComponent>(RootComponentName);
 	RootComponent->SetMobility(EComponentMobility::Movable);
-	
-	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>("SkeletalMeshComponent");
+
+	static FName SkeletalMeshComponentName{"SkeletalMeshComponent"};
+	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(SkeletalMeshComponentName);
 	SkeletalMeshComponent->SetupAttachment(RootComponent);
 }
 
@@ -23,17 +25,27 @@ ABFPoolableSkeletalMeshActor::ABFPoolableSkeletalMeshActor(const FObjectInitiali
 void ABFPoolableSkeletalMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Handle,
 	const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.Handle.IsValid()); // You must have a valid handle.
-	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
-
-	// Either dont use a delay or activate before returning to the pool.
-	bfEnsure(ActivationParams.PhysicsBodySleepDelay < 0.f || ActivationParams.ActorCurfew < 0.f ||
-		ActivationParams.ActorCurfew > ActivationParams.PhysicsBodySleepDelay);
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid());
+	
+	if (ActivationParams.Mesh == nullptr || ActivationParams.ActorCurfew < 0.f || ActivationParams.ActorCurfew < ActivationParams.PhysicsBodySleepDelay)
+	{
+#if !UE_BUILD_SHIPPING
+		if(ActivationParams.Mesh == nullptr)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed a null Mesh asset to display, was this intentional?");
+		else if(ActivationParams.ActorCurfew < 0.f)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed invalid ActivationParams, ActorCurfew must be greater than 0.");
+		else
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed invalid ActivationParams, ActorCurfew must be greater than PhysicsBodySleepDelay if both are used.");
+#endif
+		Handle.Handle->ReturnToPool();
+		return;
+	}
 
 	SetPoolHandleBP(Handle);
 	SetPoolableActorParams(ActivationParams);
 	
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	// Assumes we are responsible for activation so just go ahead and make sure.
@@ -50,19 +62,33 @@ void ABFPoolableSkeletalMeshActor::FireAndForgetBP(FBFPooledObjectHandleBP& Hand
 }
 
 
+
+
 void ABFPoolableSkeletalMeshActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableSkeletalMeshActor, ESPMode::NotThreadSafe>& Handle,
-	const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
+                                                 const FBFPoolableSkeletalMeshActorDescription& ActivationParams, const FTransform& ActorTransform)
 {
-	bfEnsure(Handle.IsValid()); // You must have a valid handle.
-	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	// You must pass a valid handle otherwise it defeats the purpose of this function.
+	check(Handle.IsValid() && Handle->IsHandleValid());
 	
-	// Either dont use a delay or activate before returning to the pool.
-	bfEnsure(ActivationParams.PhysicsBodySleepDelay < 0.f || ActivationParams.ActorCurfew < 0.f || ActivationParams.ActorCurfew > ActivationParams.PhysicsBodySleepDelay);
+	if (ActivationParams.Mesh == nullptr || ActivationParams.ActorCurfew < 0.f || ActivationParams.ActorCurfew < ActivationParams.PhysicsBodySleepDelay)
+	{
+#if !UE_BUILD_SHIPPING
+		if(ActivationParams.Mesh == nullptr)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed a null Mesh asset to display, was this intentional?");
+		else if(ActivationParams.ActorCurfew < 0.f)
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed invalid ActivationParams, ActorCurfew must be greater than 0.");
+		else
+			UE_LOGFMT(LogTemp, Warning, "PoolableSkeletalMeshActor was handed invalid ActivationParams, ActorCurfew must be greater than PhysicsBodySleepDelay if both are used.");
+#endif
+		Handle->ReturnToPool();
+		return;
+	}
+
 	
 	SetPoolHandle(Handle);
 	SetPoolableActorParams(ActivationParams);
 
-	if(ActivationInfo.ActorCurfew > 0)
+	if(ActivationInfo.ActorCurfew > 0.f)
 		SetCurfew(ActivationInfo.ActorCurfew);
 
 	// Assumes we are responsible for activation so just go ahead and make sure.
@@ -90,14 +116,19 @@ void ABFPoolableSkeletalMeshActor::ActivatePoolableActor(bool bSimulatePhysics)
 	SetupObjectState(bSimulatePhysics);
 
 	// Should be overridden if not desired.
-	if(bSimulatePhysics && ActivationInfo.PhysicsBodySleepDelay > 0)
+	if(bSimulatePhysics && ActivationInfo.PhysicsBodySleepDelay > 0.f)
 	{
 		RemovePhysicsSleepDelay();
 		FTimerDelegate TimerDel;
 		TimerDel.BindWeakLambda(this, [this]
 		{
+			SkeletalMeshComponent->SetSimulatePhysics(false);
 			SkeletalMeshComponent->PutAllRigidBodiesToSleep();
 			SkeletalMeshComponent->SetCollisionProfileName(MeshSleepPhysicsProfile.Name);
+			if(!SkeletalMeshComponent->GetAnimInstance() || !SkeletalMeshComponent->GetAnimInstance()->IsAnyMontagePlaying())
+			{
+				SkeletalMeshComponent->SetComponentTickEnabled(false);
+			}
 		});
 		GetWorld()->GetTimerManager().SetTimer(SleepPhysicsTimerHandle, TimerDel, ActivationInfo.PhysicsBodySleepDelay, false);
 	}
@@ -130,7 +161,6 @@ void ABFPoolableSkeletalMeshActor::SetupObjectState(bool bSimulatePhysics)
 }
 
 
-// If successful this leads to the interface call OnObjectPooled.
 bool ABFPoolableSkeletalMeshActor::ReturnToPool()
 {
 	if(bIsUsingBPHandle)
@@ -172,9 +202,10 @@ void ABFPoolableSkeletalMeshActor::SetPoolHandleBP(FBFPooledObjectHandleBP& Hand
 {
 	bfEnsure(ObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.Handle.IsValid() && Handle.Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = true;
 	BPObjectHandle = Handle.Handle;
-	Handle.Reset(); // Clear the handle so it can't be used again.
+	Handle.Invalidate(); // Clear the handle so it can't be used again.
 }
 
 
@@ -182,6 +213,7 @@ void ABFPoolableSkeletalMeshActor::SetPoolHandle(TBFPooledObjectHandlePtr<ABFPoo
 {
 	bfEnsure(BPObjectHandle == nullptr); // You can't have both handles set.
 	bfEnsure(Handle.IsValid() && Handle->IsHandleValid()); // You must have a valid handle.
+	
 	bIsUsingBPHandle = false;
 	ObjectHandle = Handle;
 	Handle.Reset(); // Clear the handle so it can't be used again.
@@ -214,9 +246,11 @@ USkeletalMesh* ABFPoolableSkeletalMeshActor::GetSkeletalMesh() const
 
 void ABFPoolableSkeletalMeshActor::SetCurfew(float SecondsUntilReturn)
 {
-	bfEnsure(SecondsUntilReturn > 0);
-	RemoveCurfew();
-	GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableSkeletalMeshActor::OnCurfewExpired, SecondsUntilReturn, false);
+	if(SecondsUntilReturn > 0.f)
+	{
+		RemoveCurfew();
+		GetWorld()->GetTimerManager().SetTimer(CurfewTimerHandle, this, &ABFPoolableSkeletalMeshActor::OnCurfewExpired, SecondsUntilReturn, false);
+	}
 }
 
 

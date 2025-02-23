@@ -2,11 +2,11 @@
 // Licensed under the MIT License. See LICENSE.md file in repo root for full license information.
 
 #pragma once
-#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
-#include "BFObjectPooling/Pool/BFObjectPool.h"
-#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "GameFramework/Actor.h"
+
 #include "BFPoolableActorHelpers.h"
+#include "BFObjectPooling/Interfaces/BFPooledObjectInterface.h"
+#include "BFObjectPooling/Pool/BFPooledObjectHandle.h"
 #include "BFPoolableProjectileActor.generated.h"
 
 
@@ -25,6 +25,8 @@ class UProjectileMovementComponent;
  *
  * - Manual Control: You can manually control the poolable actor, you are responsible for acquiring the actors handle (like normal but you hang on to it until it's ready to return) and setting its params via SetPoolableActorParams() 
  * 		or any other way you see fit to setup your object. */
+
+// --------------
 
 
 /** A generic poolable projectile actor that already implements the IBFPooledObjectInterface and can be used for various situations involving projectiles in the world.
@@ -46,18 +48,23 @@ public:
 	
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
 	UFUNCTION(BlueprintCallable, Category="BF|Poolable Static Mesh Actor", meta=(DisplayName="Fire And Forget Initialize"))
-	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle, const FBFPoolableProjectileActorDescription& ActivationParams, const FTransform& ActorTransform);
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableProjectileActorDescription& ActivationParams, const FVector& ActorLocation, const FRotator& ActorRotation) {FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});}
-
-	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableProjectileActorDescription& ActivationParams, const FVector& ActorLocation) {FireAndForget(Handle, ActivationParams, FTransform{ActorLocation});}
+	virtual void FireAndForgetBP(UPARAM(ref)FBFPooledObjectHandleBP& Handle,
+								const FBFPoolableProjectileActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 	// For easy fire and forget usage, will invalidate the Handle as the PoolActor now takes responsibility for returning based on our poolable actor params.
-	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle, 
-		const FBFPoolableProjectileActorDescription& ActivationParams, const FTransform& ActorTransform);
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle, 
+						const FBFPoolableProjectileActorDescription& ActivationParams,
+						const FVector& ActorLocation,
+						const FRotator& ActorRotation);
 
+	void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle, 
+	                   const FBFPoolableProjectileActorDescription& ActivationParams,
+	                   const FVector& ActorLocation);
+
+	virtual void FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle, 
+								const FBFPoolableProjectileActorDescription& ActivationParams,
+								const FTransform& ActorTransform);
 
 
 	/** Used when manually controlling this pooled actor, otherwise you should use FireAndForget. This is typically handed to the pooled actor because you are now ready to let the pooled actor handle its own
@@ -117,8 +124,7 @@ protected:
 	// Called just prior to being activated in the world.
 	virtual void SetupObjectState(); 
 protected:
-	/* BP pools store UObject handles for convenience and I cant template member functions (:
-	 * So I have decided for everyone that we non ThreadSafe for performance benefits, you are using Multithreading with BP typically. You can always implement your own classes anyway.  */
+	// Blueprint pools are wrappers around UObject Templated pools.
 	TBFPooledObjectHandlePtr<UObject, ESPMode::NotThreadSafe> BPObjectHandle = nullptr; 
 	TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe> ObjectHandle = nullptr;
 	
@@ -136,6 +142,26 @@ protected:
 	FTimerHandle CurfewTimerHandle;
 	FBFPoolableProjectileActorDescription ActivationInfo;
 
-	UPROPERTY(Transient)
 	uint32 bIsUsingBPHandle:1 = false;
+	uint32 bHandledOverlapOrCollision:1 = false;
 };
+
+
+
+
+inline void ABFPoolableProjectileActor::FireAndForget(TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle,
+												const FBFPoolableProjectileActorDescription& ActivationParams,
+												const FVector& ActorLocation,
+												const FRotator& ActorRotation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorRotation, ActorLocation});
+}
+
+
+
+inline void ABFPoolableProjectileActor::FireAndForget( TBFPooledObjectHandlePtr<ABFPoolableProjectileActor, ESPMode::NotThreadSafe>& Handle,
+												const FBFPoolableProjectileActorDescription& ActivationParams,
+												const FVector& ActorLocation)
+{
+	FireAndForget(Handle, ActivationParams, FTransform{ActorLocation});
+}
