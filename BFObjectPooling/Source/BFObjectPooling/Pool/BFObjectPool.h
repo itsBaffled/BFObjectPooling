@@ -1230,7 +1230,7 @@ bool TBFObjectPool<T, Mode>::ReturnToPool(TBFPooledObjectHandlePtr<T, Mode>& Han
 
 	FBFPooledObjectInfo& ObjectInfo = PoolContainer->ObjectPool.FindChecked(Handle->GetPoolID());
 	++ObjectInfo.ObjectCheckoutID; 
-	DeactivateObject(Handle->GetObject());
+	DeactivateObject(CastChecked<T>(ObjectInfo.PooledObject.Get()));
 	ObjectInfo.bActive = false;
 	PoolContainer->InactiveObjectIDPool.Add(ObjectInfo.ObjectPoolID);
 
